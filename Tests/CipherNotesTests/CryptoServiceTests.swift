@@ -198,7 +198,7 @@ final class CryptoServiceTests: XCTestCase {
             let store = VaultStore(vaultURL: url)
             store.registerUser(username: "solo", password: "solo-pass", confirmation: "solo-pass")
 
-            guard let solo = store.accounts.first else {
+            guard store.accounts.first != nil else {
                 return XCTFail("应该存在 solo 账户")
             }
             XCTAssertEqual(store.userCount, 1)

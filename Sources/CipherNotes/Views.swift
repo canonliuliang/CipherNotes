@@ -10,6 +10,7 @@ private func withSecurityScopedAccess<T>(_ url: URL, _ body: () throws -> T) ret
     return try body()
 }
 
+@MainActor
 private func requestDangerAuthorization(title: String, message: String, confirmationPrompt: String) -> (password: String, confirmation: String)? {
     let passwordField = NSSecureTextField()
     passwordField.placeholderString = "当前账户密码"
@@ -33,6 +34,33 @@ private func requestDangerAuthorization(title: String, message: String, confirma
     alert.addButton(withTitle: "取消")
     guard alert.runModal() == .alertFirstButtonReturn else { return nil }
     return (passwordField.stringValue, confirmationField.stringValue)
+}
+
+@MainActor
+private func copyCredentialAndOpenPasswordsApp(_ credential: PasswordAppCredential) -> Bool {
+    let clipboardText = """
+    服务：\(credential.serviceName)
+    用户名：\(credential.username)
+    密码：\(credential.password)
+    """
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(clipboardText, forType: .string)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 120) {
+        if NSPasteboard.general.string(forType: .string) == clipboardText {
+            NSPasteboard.general.clearContents()
+        }
+    }
+
+    let passwordsURL = URL(fileURLWithPath: "/System/Applications/Passwords.app")
+    if FileManager.default.fileExists(atPath: passwordsURL.path) {
+        NSWorkspace.shared.openApplication(at: passwordsURL, configuration: NSWorkspace.OpenConfiguration())
+        return true
+    }
+    if let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
+        NSWorkspace.shared.open(settingsURL)
+        return true
+    }
+    return false
 }
 
 enum AppAppearance: String, CaseIterable, Identifiable {
@@ -214,6 +242,7 @@ struct RootView: View {
             RecoveryCodeView(code: store.recoveryCodeToShow ?? "") {
                 store.dismissRecoveryCode()
             }
+            .environmentObject(store)
         }
         .sheet(isPresented: $showingLegalDisclosure) {
             LegalDisclosureView()
@@ -1818,6 +1847,7 @@ struct ShareImportView: View {
 }
 
 struct RecoveryCodeView: View {
+    @EnvironmentObject private var store: VaultStore
     let code: String
     let onDone: () -> Void
 
@@ -1836,6 +1866,27 @@ struct RecoveryCodeView: View {
             Text("重设密码或重新生成恢复码后，旧恢复码会失效。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let credential = store.passwordAppCredential {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("保存到 Apple 密码 App", systemImage: "keychain.fill")
+                        .font(.headline)
+                    Text("macOS 不允许应用静默写入密码 App。点击后会复制账户信息并打开密码 App，你可以新建一条记录后粘贴保存。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        if copyCredentialAndOpenPasswordsApp(credential) {
+                            store.errorMessage = "账户信息已复制，请在密码 App 中新建记录并粘贴保存"
+                        } else {
+                            store.errorMessage = "账户信息已复制，请手动打开密码 App 保存"
+                        }
+                    } label: {
+                        Label("复制账号密码并打开密码 App", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
             HStack {
                 Spacer()
                 Button("我已保存") { onDone() }

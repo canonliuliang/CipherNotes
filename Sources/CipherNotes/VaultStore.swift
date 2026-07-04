@@ -13,6 +13,7 @@ final class VaultStore: ObservableObject {
     @Published private(set) var userCount = 0
     @Published private(set) var accounts: [AccountSummary] = []
     @Published var recoveryCodeToShow: String?
+    @Published var passwordAppCredential: PasswordAppCredential?
     @Published var errorMessage: String?
     @Published var autoLockMinutes = 5
 
@@ -106,6 +107,7 @@ final class VaultStore: ObservableObject {
             try write(file)
             try finishUnlock(file: file, user: built.user, rawKey: rawKey, username: built.user.displayName ?? Self.displayName(for: username))
             recoveryCodeToShow = built.recoveryCode
+            passwordAppCredential = PasswordAppCredential(serviceName: "密笺 CipherNotes", username: built.user.displayName ?? Self.displayName(for: username), password: oldPassword)
             userCount = file.users.count
             refreshAccounts(from: file)
         } catch {
@@ -129,6 +131,7 @@ final class VaultStore: ObservableObject {
             userCount = 0
             accounts = []
             recoveryCodeToShow = nil
+            passwordAppCredential = nil
             errorMessage = nil
             state = .needsAdminSetup
         } catch {
@@ -162,6 +165,7 @@ final class VaultStore: ObservableObject {
             userCount = 0
             accounts = []
             recoveryCodeToShow = nil
+            passwordAppCredential = nil
             autoLockMinutes = 5
             state = .needsAdminSetup
             errorMessage = nil
@@ -224,6 +228,7 @@ final class VaultStore: ObservableObject {
             try write(file)
             try finishUnlock(file: file, user: built.user, rawKey: rawKey, username: built.user.displayName ?? Self.displayName(for: username))
             recoveryCodeToShow = built.recoveryCode
+            passwordAppCredential = PasswordAppCredential(serviceName: "密笺 CipherNotes", username: built.user.displayName ?? Self.displayName(for: username), password: password)
             userCount = file.users.count
             refreshAccounts(from: file)
             errorMessage = touchIDWarning
@@ -263,6 +268,7 @@ final class VaultStore: ObservableObject {
             try write(file)
             try finishUnlock(file: file, user: file.users[index], rawKey: rawKey, username: file.users[index].displayName ?? Self.displayName(for: username))
             recoveryCodeToShow = recovery.code
+            passwordAppCredential = PasswordAppCredential(serviceName: "密笺 CipherNotes", username: file.users[index].displayName ?? Self.displayName(for: username), password: newPassword)
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "无法重设密码"
         }
@@ -481,6 +487,7 @@ final class VaultStore: ObservableObject {
 
     func dismissRecoveryCode() {
         recoveryCodeToShow = nil
+        passwordAppCredential = nil
     }
 
     func exportSharedNote(id: UUID, sharePassword: String) -> Data? {

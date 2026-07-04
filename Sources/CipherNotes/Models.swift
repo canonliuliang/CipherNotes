@@ -102,6 +102,12 @@ struct AccountSummary: Identifiable, Codable, Equatable, Hashable, Sendable {
     var role: AccountRole = .standard
 }
 
+struct PasswordAppCredential: Equatable, Sendable {
+    let serviceName: String
+    let username: String
+    let password: String
+}
+
 enum AccountRole: String, Codable, CaseIterable, Identifiable, Equatable, Sendable {
     case admin
     case standard
