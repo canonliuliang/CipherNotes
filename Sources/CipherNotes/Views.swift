@@ -332,6 +332,139 @@ struct BrandHeader: View {
     }
 }
 
+struct CeremonyToast: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.mint)
+                .frame(width: 32, height: 32)
+                .background(.mint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(0.34), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+    }
+}
+
+struct VaultSealAnimation: View {
+    @AppStorage("reduceMotion") private var reduceMotion = false
+    var active: Bool
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.mint.opacity(active ? 0.0 : 0.26), lineWidth: 1.4)
+                    .scaleEffect(active && !reduceMotion ? 1.18 + CGFloat(index) * 0.10 : 0.86 + CGFloat(index) * 0.06)
+                    .opacity(active ? 0 : 1)
+                    .animation(
+                        reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.72).delay(Double(index) * 0.08),
+                        value: active
+                    )
+            }
+            Image(systemName: active ? "checkmark.seal.fill" : "lock.shield.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(active ? .mint : .secondary)
+                .symbolEffect(.bounce, value: active)
+        }
+        .frame(width: 86, height: 86)
+        .background(.quaternary.opacity(0.72), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+struct TouchIDScanView: View {
+    @AppStorage("reduceMotion") private var reduceMotion = false
+    @State private var scanning = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .stroke(.mint.opacity(0.24), lineWidth: 1)
+                    .scaleEffect(scanning && !reduceMotion ? 1.42 : 0.86)
+                    .opacity(scanning ? 0 : 1)
+                Image(systemName: "touchid")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.mint)
+                    .symbolEffect(.pulse, options: .repeating, value: scanning)
+            }
+            .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("正在确认 Touch ID")
+                    .font(.headline)
+                Text("验证通过后会立即解锁本地保险库")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.mint.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onAppear {
+            scanning = true
+        }
+    }
+}
+
+struct VaultIntakeVisual: View {
+    @AppStorage("reduceMotion") private var reduceMotion = false
+    @State private var sealed = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.mint.opacity(0.16))
+                Image(systemName: sealed ? "lock.rectangle.stack.fill" : "doc.badge.arrow.up.fill")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.mint)
+                    .scaleEffect(sealed && !reduceMotion ? 1.08 : 1)
+                    .animation(.easeInOut(duration: 0.28), value: sealed)
+            }
+            .frame(width: 50, height: 50)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(sealed ? "正在封存文件" : "正在接收文件")
+                    .font(.headline)
+                Text(sealed ? "分片加密写入保险柜，完成后会移除原文件。" : "文件已进入本地加密流程。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            ProgressView()
+                .controlSize(.small)
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(.mint.opacity(0.22), lineWidth: 1)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                sealed = true
+            }
+        }
+    }
+}
+
 struct IntroView: View {
     let onContinue: () -> Void
 
@@ -383,11 +516,18 @@ struct AdminSetupView: View {
     @EnvironmentObject private var store: VaultStore
     @State private var adminPassword = ""
     @State private var confirmation = ""
+    @State private var sealArmed = false
 
     var body: some View {
         VStack(spacing: 24) {
             BrandHeader()
             VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Spacer()
+                    VaultSealAnimation(active: sealArmed)
+                    Spacer()
+                }
+                .padding(.bottom, 4)
                 Text("创建管理员密码").font(.title2.bold())
                 Text("管理员密码只用于允许注册新用户和升级旧保险库，不能直接查看任何用户的笔记。")
                     .font(.callout).foregroundStyle(.secondary)
@@ -397,6 +537,8 @@ struct AdminSetupView: View {
                     .textFieldStyle(.roundedBorder)
                 ErrorText(store.errorMessage)
                 Button("创建管理员密码") {
+                    sealArmed = true
+                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
                     store.createAdminPassword(password: adminPassword, confirmation: confirmation)
                     adminPassword = ""
                     confirmation = ""
@@ -487,6 +629,7 @@ struct UnlockView: View {
     @State private var enableTouchID = false
     @State private var enableTouchIDAfterPasswordLogin = false
     @State private var accountRole = AccountRole.standard
+    @State private var touchIDUnlocking = false
     @FocusState private var focused: Bool
 
     private var selectedAccount: AccountSummary? {
@@ -586,6 +729,10 @@ struct UnlockView: View {
             SecureField("用户密码", text: $password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(unlock)
+            if touchIDUnlocking {
+                TouchIDScanView()
+                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+            }
             Button("登录", action: unlock)
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .frame(maxWidth: .infinity)
@@ -594,7 +741,12 @@ struct UnlockView: View {
             if store.canUseTouchID(userID: selectedAccountID) {
                 Button {
                     if let selectedAccountID {
-                        Task { await store.unlockWithTouchID(userID: selectedAccountID) }
+                        touchIDUnlocking = true
+                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                        Task {
+                            await store.unlockWithTouchID(userID: selectedAccountID)
+                            await MainActor.run { touchIDUnlocking = false }
+                        }
                     }
                 } label: {
                     Label("使用 Touch ID 登录所选账户", systemImage: "touchid")
@@ -691,6 +843,7 @@ struct UnlockView: View {
             succeeded = store.unlock(username: username, password: password)
         }
         if succeeded {
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             password = ""
             if enableTouchIDAfterPasswordLogin {
                 store.enableTouchID()
@@ -709,6 +862,7 @@ struct UnlockView: View {
             role: accountRole
         )
         if store.state == .unlocked {
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             adminPassword = ""
             password = ""
             confirmation = ""
@@ -1413,6 +1567,10 @@ struct VaultView: View {
     @AppStorage("reduceMotion") private var reduceMotion = false
     @State private var query = ""
     @State private var filter: VaultFilter = .all
+    @State private var intakeActive = false
+    @State private var previousVaultCount = 0
+    @State private var ceremonyMessage: String?
+    @State private var ceremonyDismissTask: Task<Void, Never>?
 
     private var filteredItems: [VaultAttachment] {
         let scoped = store.vaultItems.filter { item in
@@ -1464,6 +1622,11 @@ struct VaultView: View {
                 .buttonStyle(.borderedProminent)
             }
 
+            if intakeActive {
+                VaultIntakeVisual()
+                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+            }
+
             TextField("搜索保险柜文件", text: $query)
                 .textFieldStyle(.roundedBorder)
 
@@ -1503,6 +1666,36 @@ struct VaultView: View {
             }
         }
         .padding(24)
+        .overlay(alignment: .bottom) {
+            if let ceremonyMessage {
+                CeremonyToast(
+                    systemImage: "checkmark.seal.fill",
+                    title: ceremonyMessage,
+                    detail: "文件已写入本地加密保险柜。"
+                )
+                .frame(maxWidth: 380)
+                .padding(.bottom, 18)
+                .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+            }
+        }
+        .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: intakeActive)
+        .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: ceremonyMessage)
+        .onAppear {
+            previousVaultCount = store.vaultItems.count
+        }
+        .onChange(of: store.vaultItems.count) { oldValue, newValue in
+            if newValue > oldValue {
+                let imported = newValue - oldValue
+                intakeActive = false
+                showCeremony(imported == 1 ? "加密完成" : "\(imported) 个文件加密完成")
+            }
+            previousVaultCount = newValue
+        }
+        .onChange(of: store.errorMessage) { _, message in
+            if message != nil {
+                intakeActive = false
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesOpenVaultImporter)) { _ in
             chooseVaultFiles()
         }
@@ -1519,7 +1712,21 @@ struct VaultView: View {
         panel.message = "移入保险柜后，原照片/原文件会从原位置删除"
         panel.prompt = "加密并删除原文件"
         guard panel.runModal() == .OK else { return }
+        intakeActive = true
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         store.importFilesToVault(urls: panel.urls, deleteOriginals: true)
+    }
+
+    private func showCeremony(_ message: String) {
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        ceremonyDismissTask?.cancel()
+        ceremonyMessage = message
+        ceremonyDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            await MainActor.run {
+                ceremonyMessage = nil
+            }
+        }
     }
 }
 
@@ -2132,6 +2339,7 @@ struct ChangelogView: View {
                 "新增安全中心，集中查看账号保护状态、自动锁定、Touch ID、恢复码、备份还原和本地数据位置。",
                 "保险柜改为分片加密存储，超大文件会后台导入并支持流式导出，不再一次性读入内存。",
                 "优化保险柜大图预览、文件权限访问和发布打包流程，减少卡顿与权限噪音。",
+                "新增首次创建保险库、Touch ID 解锁、保险柜导入和加密完成时的轻量动效与反馈。",
                 "保留首次简介、应用内更新日志、法律声明、备份还原、保险柜和共享文件等已有功能。"
             ]
         ),
