@@ -2119,10 +2119,10 @@ struct ChangelogView: View {
 
     private let entries: [UpdateLogEntry] = [
         UpdateLogEntry(
-            id: "0.11.0",
-            version: "0.11.0",
+            id: "1.0.0",
+            version: "1.0.0",
             title: "纯免费版本与管理员安全补全",
-            dateText: "2026-06-28",
+            dateText: "2026-07-04",
             items: [
                 "移除会员、购买、恢复购买和所有付费门槛，现有本地功能全部免费可用。",
                 "注册页不再出现会员等级；高级数据保护和恢复码重生成变为普通安全功能。",
