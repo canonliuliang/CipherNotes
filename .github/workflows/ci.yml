@@ -13,5 +13,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Prepare SwiftPM cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/swiftpm-cache"
+          mkdir -p "$RUNNER_TEMP/ciphernotes-test"
+
       - name: Run tests
-        run: swift test --scratch-path /tmp/ciphernotes-test
+        run: swift test --scratch-path "$RUNNER_TEMP/ciphernotes-test"
+        env:
+          SWIFTPM_HOME: ${{ runner.temp }}/swiftpm-cache
