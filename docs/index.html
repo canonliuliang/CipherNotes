@@ -4,104 +4,83 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>密笺 CipherNotes - 本地加密记事本与文件保险柜</title>
-  <meta name="description" content="密笺是纯本地、纯免费的 macOS 加密记事本与文件保险柜。支持多账号、恢复码、Touch ID、本地备份和大文件分片加密。">
+  <meta name="description" content="密笺 CipherNotes 是纯本地、纯免费的 macOS 加密记事本与文件保险柜。支持多账号、恢复码、Touch ID、本地备份和大文件分片加密。">
   <style>
     :root {
       color-scheme: light;
-      --ink: #172033;
-      --muted: #5f6b7a;
-      --line: #d9e1e8;
-      --panel: #ffffff;
-      --panel-soft: #f6f9fb;
+      --ink: #111827;
+      --soft-ink: #374151;
+      --muted: #667085;
+      --line: #d7dee8;
+      --paper: #ffffff;
+      --wash: #f4f8fb;
       --blue: #0f6cbd;
-      --teal: #0f9f9a;
+      --cyan: #168a9a;
       --green: #2e7d32;
-      --shadow: 0 18px 48px rgba(30, 52, 74, .14);
+      --red: #b42318;
+      --shadow: 0 24px 70px rgba(20, 35, 55, .16);
+      --small-shadow: 0 10px 28px rgba(20, 35, 55, .10);
       --radius: 8px;
     }
 
     * { box-sizing: border-box; }
 
+    html { scroll-behavior: smooth; }
+
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink);
-      background: #eef4f8;
+      background: #eef3f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       line-height: 1.55;
       letter-spacing: 0;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .page {
-      min-height: 100vh;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.96), rgba(246,250,252,.94) 48%, rgba(236,244,248,.98));
-    }
+    a { color: inherit; text-decoration: none; }
 
     .wrap {
-      width: min(1120px, calc(100% - 40px));
+      width: min(1160px, calc(100% - 40px));
       margin: 0 auto;
     }
 
     header {
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 30;
+      border-bottom: 1px solid rgba(215, 222, 232, .82);
+      background: rgba(247, 250, 252, .82);
       backdrop-filter: blur(18px);
-      background: rgba(247, 251, 253, .78);
-      border-bottom: 1px solid rgba(217, 225, 232, .82);
     }
 
     .nav {
-      height: 70px;
+      min-height: 68px;
       display: flex;
       align-items: center;
       gap: 22px;
     }
 
     .brand {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 12px;
       min-width: 0;
     }
 
-    .brand img {
+    .brand img,
+    .app-icon {
       width: 38px;
       height: 38px;
       border-radius: 8px;
-      box-shadow: 0 8px 18px rgba(15, 108, 189, .18);
-    }
-
-    .logo-mark {
-      display: inline-grid;
-      place-items: center;
-      width: 38px;
-      height: 38px;
-      border-radius: 8px;
-      color: #fff;
-      background: linear-gradient(145deg, var(--blue), var(--teal));
-      box-shadow: 0 8px 18px rgba(15, 108, 189, .18);
-      font-size: 15px;
-      font-weight: 800;
-    }
-
-    .mock-brand .logo-mark {
-      width: 42px;
-      height: 42px;
+      box-shadow: 0 10px 24px rgba(15, 108, 189, .18);
     }
 
     .brand strong {
       display: block;
-      font-size: 18px;
+      font-size: 17px;
       line-height: 1.1;
     }
 
-    .brand span {
+    .brand span span {
       display: block;
       color: var(--muted);
       font-size: 12px;
@@ -112,7 +91,7 @@
       margin-left: auto;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       color: var(--muted);
       font-size: 14px;
     }
@@ -133,213 +112,310 @@
       justify-content: center;
       min-height: 42px;
       padding: 0 18px;
-      border-radius: 6px;
       border: 1px solid var(--line);
-      font-weight: 650;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .84);
+      color: var(--ink);
+      font-weight: 700;
       white-space: nowrap;
     }
 
     .button.primary {
+      color: #fff;
       background: var(--blue);
       border-color: var(--blue);
-      color: #fff;
-      box-shadow: 0 10px 24px rgba(15, 108, 189, .22);
+      box-shadow: 0 12px 26px rgba(15, 108, 189, .24);
     }
 
-    .button.secondary {
-      background: rgba(255, 255, 255, .74);
-      color: var(--ink);
+    .button.dark {
+      color: #fff;
+      background: #111827;
+      border-color: #111827;
     }
 
     .hero {
-      min-height: calc(100vh - 70px);
+      min-height: min(760px, calc(100vh - 124px));
+      position: relative;
+      overflow: hidden;
       display: grid;
-      grid-template-columns: minmax(0, 1.02fr) minmax(340px, .98fr);
-      gap: 54px;
       align-items: center;
-      padding: 62px 0 42px;
+      padding: 44px 0 34px;
+      background:
+        linear-gradient(180deg, rgba(244, 248, 251, .92), rgba(238, 243, 247, .98)),
+        linear-gradient(90deg, rgba(15, 108, 189, .12), rgba(22, 138, 154, .08), rgba(46, 125, 50, .06));
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, .92fr) minmax(420px, 1.08fr);
+      align-items: center;
+      gap: 42px;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 2;
     }
 
     .eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       padding: 7px 10px;
-      border: 1px solid rgba(15, 108, 189, .22);
+      border: 1px solid rgba(15, 108, 189, .24);
       border-radius: 999px;
       color: var(--blue);
-      background: rgba(255, 255, 255, .74);
+      background: rgba(255, 255, 255, .72);
       font-size: 13px;
-      font-weight: 650;
+      font-weight: 750;
     }
 
     h1 {
-      margin: 22px 0 16px;
-      max-width: 780px;
-      font-size: clamp(44px, 7vw, 82px);
-      line-height: .98;
+      margin: 22px 0 18px;
+      max-width: 760px;
+      font-size: clamp(48px, 8vw, 92px);
+      line-height: .96;
       letter-spacing: 0;
     }
 
     .lead {
-      max-width: 690px;
-      color: var(--muted);
+      max-width: 640px;
+      margin: 0;
+      color: var(--soft-ink);
       font-size: clamp(18px, 2vw, 22px);
     }
 
-    .actions {
+    .hero-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
       margin-top: 30px;
     }
 
-    .proof {
+    .trust-row {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
+      max-width: 650px;
       margin-top: 34px;
-      max-width: 640px;
     }
 
-    .proof div {
-      padding: 13px 14px;
-      background: rgba(255,255,255,.7);
-      border: 1px solid var(--line);
+    .trust-row div {
+      min-height: 82px;
+      padding: 14px;
+      border: 1px solid rgba(215, 222, 232, .92);
       border-radius: var(--radius);
+      background: rgba(255, 255, 255, .74);
+      box-shadow: 0 8px 22px rgba(20, 35, 55, .06);
     }
 
-    .proof strong {
+    .trust-row strong {
       display: block;
       font-size: 18px;
     }
 
-    .proof span {
+    .trust-row span {
+      display: block;
+      margin-top: 2px;
       color: var(--muted);
       font-size: 13px;
     }
 
-    .product-shot {
+    .stage {
       position: relative;
+      min-height: 550px;
       display: grid;
-      place-items: center;
-      min-height: 520px;
+      align-items: center;
     }
 
-    .app-window {
-      width: min(500px, 100%);
-      background: rgba(255, 255, 255, .82);
-      border: 1px solid rgba(217,225,232,.9);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
+    .mac-window {
+      width: min(660px, 100%);
+      margin-left: auto;
       overflow: hidden;
+      border: 1px solid rgba(190, 203, 216, .92);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: var(--shadow);
     }
 
-    .window-bar {
+    .traffic {
+      height: 42px;
       display: flex;
       align-items: center;
-      gap: 7px;
-      height: 42px;
+      gap: 8px;
       padding: 0 16px;
       border-bottom: 1px solid var(--line);
-      background: rgba(248, 251, 253, .92);
+      background: rgba(248, 251, 253, .96);
     }
 
-    .dot {
+    .traffic span {
       width: 11px;
       height: 11px;
       border-radius: 50%;
-      background: #c8d2dc;
+      background: #c7d2df;
     }
 
-    .mock-body {
+    .app-shell {
       display: grid;
-      grid-template-columns: 165px 1fr;
-      min-height: 430px;
+      grid-template-columns: 190px 1fr;
+      min-height: 440px;
     }
 
-    .sidebar {
-      border-right: 1px solid var(--line);
-      background: #f4f8fb;
+    .side {
       padding: 18px 14px;
+      border-right: 1px solid var(--line);
+      background: #f5f8fb;
     }
 
-    .mock-brand {
+    .mini-brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 22px;
-    }
-
-    .mock-brand img {
-      width: 42px;
-      height: 42px;
-      border-radius: 8px;
-    }
-
-    .side-line {
-      height: 12px;
-      border-radius: 5px;
-      background: #d7e3ec;
-      margin: 11px 0;
-    }
-
-    .side-line.active {
-      background: linear-gradient(90deg, var(--blue), var(--teal));
-      height: 34px;
-      border-radius: 7px;
-    }
-
-    .editor {
-      padding: 28px;
-      background: #fff;
-    }
-
-    .editor h2 {
-      margin: 0 0 14px;
-      font-size: 28px;
-      letter-spacing: 0;
-    }
-
-    .editor .meta {
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 24px;
-    }
-
-    .text-line {
-      height: 13px;
-      border-radius: 5px;
-      background: #dce8ef;
-      margin: 14px 0;
-    }
-
-    .text-line.short { width: 62%; }
-    .text-line.mid { width: 78%; }
-
-    .safe-strip {
-      margin-top: 26px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .safe-strip div {
-      min-height: 76px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #f6fafc;
-      display: grid;
-      place-items: center;
-      color: var(--blue);
-      font-size: 15px;
+      margin-bottom: 20px;
       font-weight: 750;
     }
 
-    section {
-      padding: 76px 0;
-      border-top: 1px solid rgba(217,225,232,.72);
+    .mini-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
     }
+
+    .rail {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rail div {
+      height: 34px;
+      border-radius: 6px;
+      background: #e3ebf2;
+    }
+
+    .rail .active {
+      background: var(--blue);
+      box-shadow: inset 4px 0 0 rgba(255, 255, 255, .55);
+    }
+
+    .workspace {
+      padding: 24px;
+      background: #fff;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .search {
+      width: min(260px, 100%);
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f7fafc;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .status::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .doc-title {
+      margin: 0 0 7px;
+      font-size: 28px;
+      line-height: 1.15;
+    }
+
+    .doc-meta {
+      margin-bottom: 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .line {
+      height: 13px;
+      margin: 13px 0;
+      border-radius: 5px;
+      background: #dbe7ef;
+    }
+
+    .line.mid { width: 76%; }
+    .line.short { width: 52%; }
+
+    .vault-panel {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 26px;
+    }
+
+    .vault-panel div {
+      min-height: 92px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7fafc;
+    }
+
+    .vault-panel strong {
+      display: block;
+      color: var(--blue);
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .vault-panel span {
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .float-card {
+      position: absolute;
+      right: 18px;
+      bottom: 22px;
+      width: min(290px, calc(100% - 24px));
+      padding: 16px;
+      border: 1px solid rgba(215, 222, 232, .92);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: var(--small-shadow);
+    }
+
+    .float-card strong {
+      display: block;
+      font-size: 15px;
+    }
+
+    .float-card p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    section {
+      padding: 82px 0;
+      border-top: 1px solid rgba(215, 222, 232, .74);
+      background: #f7fafc;
+    }
+
+    section.white { background: #fff; }
 
     .section-head {
       max-width: 760px;
@@ -348,8 +424,8 @@
 
     .section-head h2 {
       margin: 0 0 12px;
-      font-size: clamp(30px, 4vw, 46px);
-      line-height: 1.08;
+      font-size: clamp(32px, 5vw, 52px);
+      line-height: 1.06;
       letter-spacing: 0;
     }
 
@@ -359,376 +435,436 @@
       font-size: 18px;
     }
 
-    .grid {
+    .feature-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
     }
 
-    .card {
-      background: rgba(255,255,255,.82);
+    .feature {
+      min-height: 230px;
+      padding: 22px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 22px;
-      min-height: 190px;
+      background: var(--paper);
+      box-shadow: 0 12px 28px rgba(20, 35, 55, .05);
     }
 
-    .card .icon {
-      display: inline-grid;
+    .feature-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
       place-items: center;
-      width: 40px;
-      height: 40px;
+      margin-bottom: 22px;
       border-radius: 8px;
       color: #fff;
       background: var(--blue);
-      margin-bottom: 20px;
-      font-weight: 800;
+      font-weight: 850;
     }
 
-    .card:nth-child(2n) .icon { background: var(--teal); }
-    .card:nth-child(3n) .icon { background: var(--green); }
+    .feature:nth-child(2) .feature-icon,
+    .feature:nth-child(5) .feature-icon { background: var(--cyan); }
 
-    .card h3 {
-      margin: 0 0 8px;
+    .feature:nth-child(3) .feature-icon,
+    .feature:nth-child(6) .feature-icon { background: var(--green); }
+
+    .feature h3 {
+      margin: 0 0 9px;
       font-size: 20px;
-      letter-spacing: 0;
     }
 
-    .card p {
+    .feature p {
       margin: 0;
       color: var(--muted);
       font-size: 15px;
     }
 
-    .band {
-      background: #172033;
-      color: #f7fbfd;
+    .deep-band {
+      color: #f8fbfd;
+      background: #101828;
     }
 
-    .band .section-head p,
-    .band .item p {
-      color: #b9c6d2;
-    }
+    .deep-band .section-head p { color: #bdc7d4; }
 
-    .flow {
+    .vault-flow {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
       counter-reset: step;
     }
 
-    .item {
-      padding: 20px;
-      border: 1px solid rgba(255,255,255,.18);
+    .flow-step {
+      min-height: 220px;
+      padding: 22px;
+      border: 1px solid rgba(255, 255, 255, .18);
       border-radius: var(--radius);
-      background: rgba(255,255,255,.06);
+      background: rgba(255, 255, 255, .06);
     }
 
-    .item::before {
+    .flow-step::before {
       counter-increment: step;
       content: "0" counter(step);
       display: block;
-      color: #6ee7d8;
-      font-weight: 750;
-      margin-bottom: 16px;
+      margin-bottom: 22px;
+      color: #74d7c9;
+      font-weight: 850;
     }
 
-    .item h3 {
+    .flow-step h3 {
       margin: 0 0 8px;
-      font-size: 19px;
-      letter-spacing: 0;
+      font-size: 20px;
     }
 
-    .item p {
+    .flow-step p {
       margin: 0;
+      color: #bdc7d4;
       font-size: 14px;
     }
 
-    .compare {
+    .split {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
+      gap: 18px;
     }
 
-    .list {
+    .panel {
+      padding: 24px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: rgba(255,255,255,.82);
-      padding: 22px;
+      background: var(--paper);
     }
 
-    .list h3 {
-      margin: 0 0 14px;
-      font-size: 22px;
-      letter-spacing: 0;
+    .panel h3 {
+      margin: 0 0 16px;
+      font-size: 23px;
     }
 
-    .list ul {
+    .checklist {
+      display: grid;
+      gap: 13px;
       margin: 0;
       padding: 0;
       list-style: none;
-      display: grid;
-      gap: 12px;
       color: var(--muted);
     }
 
-    .list li {
+    .checklist li {
       display: grid;
-      grid-template-columns: 22px 1fr;
+      grid-template-columns: 24px 1fr;
       gap: 10px;
     }
 
-    .list li::before {
-      content: "✓";
-      color: var(--green);
-      font-weight: 800;
+    .checklist li::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      margin-top: 3px;
+      border-radius: 5px;
+      background:
+        linear-gradient(135deg, transparent 50%, rgba(255,255,255,.28) 50%),
+        var(--green);
     }
 
-    .cta {
+    .quote {
       display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 24px;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 36px;
       align-items: center;
-      padding: 34px;
+      padding: 36px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: rgba(255,255,255,.82);
-      box-shadow: 0 14px 34px rgba(30, 52, 74, .08);
+      background: var(--paper);
+      box-shadow: var(--small-shadow);
     }
 
-    .cta h2 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 4vw, 42px);
-      letter-spacing: 0;
+    .quote h2 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.08;
     }
 
-    .cta p {
+    .quote p {
       margin: 0;
       color: var(--muted);
+      font-size: 18px;
+    }
+
+    .release-card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7fafc;
+    }
+
+    .release-card strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .release-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
     }
 
     footer {
-      padding: 28px 0 42px;
+      padding: 30px 0 44px;
+      border-top: 1px solid rgba(215, 222, 232, .74);
       color: var(--muted);
+      background: #fff;
       font-size: 13px;
     }
 
-    @media (max-width: 880px) {
-      .wrap { width: min(100% - 28px, 680px); }
-      .nav { height: auto; padding: 12px 0; }
+    @media (max-width: 940px) {
+      .wrap { width: min(100% - 28px, 720px); }
+      .nav { padding: 12px 0; }
       .navlinks { display: none; }
       .hero {
         min-height: auto;
-        grid-template-columns: 1fr;
-        padding: 42px 0 30px;
+        padding: 30px 0 24px;
       }
-      .product-shot { min-height: 420px; }
-      .grid, .flow, .compare, .cta {
-        grid-template-columns: 1fr;
-      }
-      .proof {
+      .hero-grid,
+      .split,
+      .quote {
         grid-template-columns: 1fr;
       }
-      .mock-body {
-        grid-template-columns: 128px 1fr;
-      }
-      .editor {
-        padding: 20px;
-      }
-      .safe-strip {
-        grid-template-columns: 1fr;
+      .stage { min-height: auto; }
+      .mac-window { margin: 26px 0 0; }
+      .feature-grid,
+      .vault-flow {
+        grid-template-columns: 1fr 1fr;
       }
     }
 
-    @media (max-width: 520px) {
-      .mock-body {
+    @media (max-width: 620px) {
+      .hero-actions,
+      .trust-row {
+        display: grid;
         grid-template-columns: 1fr;
       }
-      .sidebar {
-        display: none;
+      .button { width: 100%; }
+      .feature-grid,
+      .vault-flow,
+      .vault-panel {
+        grid-template-columns: 1fr;
       }
-      .actions {
-        display: grid;
+      .app-shell {
+        grid-template-columns: 1fr;
       }
-      .button {
-        width: 100%;
-      }
-      h1 {
-        font-size: 42px;
-      }
+      .side { display: none; }
+      .workspace { padding: 18px; }
+      .topbar { display: grid; }
+      .float-card { position: static; margin: 12px; width: auto; }
+      h1 { font-size: 48px; }
+      .trust-row div { min-height: 64px; padding: 12px; }
+      section { padding: 62px 0; }
+      .quote { padding: 24px; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <header>
-      <div class="wrap nav">
-        <a class="brand" href="#top" aria-label="密笺首页">
-          <span class="logo-mark" aria-hidden="true">密</span>
-          <span>
-            <strong>密笺</strong>
-            <span>CipherNotes</span>
-          </span>
-        </a>
-        <nav class="navlinks" aria-label="页面导航">
-          <a href="#privacy">隐私</a>
-          <a href="#vault">保险柜</a>
-          <a href="#security">安全</a>
-          <a href="#download">获取</a>
-        </nav>
-      </div>
-    </header>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#top" aria-label="密笺首页">
+        <img src="./icon.png" alt="">
+        <span>
+          <strong>密笺</strong>
+          <span>CipherNotes</span>
+        </span>
+      </a>
+      <nav class="navlinks" aria-label="页面导航">
+        <a href="#privacy">隐私</a>
+        <a href="#vault">保险柜</a>
+        <a href="#accounts">账号</a>
+        <a href="#download">下载</a>
+      </nav>
+    </div>
+  </header>
 
-    <main id="top">
-      <div class="wrap hero">
-        <div>
-          <span class="eyebrow">纯本地 · 纯免费 · macOS</span>
-          <h1>密笺</h1>
-          <p class="lead">一个只属于这台 Mac 的加密记事本与文件保险柜。笔记、照片、PDF 和大文件都在本地加密保存，没有云端账户、广告、分析或购买入口。</p>
-          <div class="actions">
+  <main id="top">
+    <section class="hero" aria-label="密笺产品介绍">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">macOS · 本地加密 · 永久免费</span>
+          <h1>密笺 CipherNotes</h1>
+          <p class="lead">给私密笔记、照片和重要文件准备的一间本地保险室。内容只保存在这台 Mac 上，应用不上传、不追踪、不卖会员。</p>
+          <div class="hero-actions">
             <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载安装包</a>
-            <a class="button secondary" href="#security">查看安全设计</a>
+            <a class="button" href="#privacy">了解安全设计</a>
           </div>
-          <div class="proof" aria-label="产品要点">
-            <div><strong>AES-256-GCM</strong><span>本地加密负载</span></div>
-            <div><strong>多账号</strong><span>管理员与普通账号</span></div>
-            <div><strong>大文件</strong><span>分片加密与后台导入</span></div>
+          <div class="trust-row" aria-label="产品核心能力">
+            <div><strong>AES-256-GCM</strong><span>笔记与文件负载本地加密</span></div>
+            <div><strong>10GB 级文件</strong><span>分片加密，后台导入不卡主界面</span></div>
+            <div><strong>多账号</strong><span>管理员与普通用户权限分离</span></div>
           </div>
         </div>
 
-        <div class="product-shot" aria-label="密笺界面预览">
-          <div class="app-window">
-            <div class="window-bar">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            </div>
-            <div class="mock-body">
-              <aside class="sidebar">
-                <div class="mock-brand">
-                  <span class="logo-mark" aria-hidden="true">密</span>
-                  <strong>密笺</strong>
+        <div class="stage" aria-label="密笺界面示意">
+          <div class="mac-window">
+            <div class="traffic"><span></span><span></span><span></span></div>
+            <div class="app-shell">
+              <aside class="side">
+                <div class="mini-brand"><img src="./icon.png" alt="">密笺</div>
+                <div class="rail">
+                  <div class="active"></div>
+                  <div></div>
+                  <div style="width: 82%"></div>
+                  <div style="width: 64%"></div>
+                  <div style="width: 74%"></div>
                 </div>
-                <div class="side-line active"></div>
-                <div class="side-line"></div>
-                <div class="side-line" style="width: 78%"></div>
-                <div class="side-line" style="width: 64%"></div>
               </aside>
-              <div class="editor">
-                <h2>本地安全计划</h2>
-                <div class="meta">管理员账号 · 高级数据保护已开启</div>
-                <div class="text-line"></div>
-                <div class="text-line mid"></div>
-                <div class="text-line short"></div>
-                <div class="safe-strip">
-                  <div>AES</div>
-                  <div>NOTE</div>
-                  <div>VAULT</div>
+              <div class="workspace">
+                <div class="topbar">
+                  <div class="search"></div>
+                  <div class="status">高级保护已开启</div>
+                </div>
+                <h2 class="doc-title">本地安全计划</h2>
+                <div class="doc-meta">管理员账号 · 自动锁定 5 分钟 · Touch ID 可用</div>
+                <div class="line"></div>
+                <div class="line mid"></div>
+                <div class="line short"></div>
+                <div class="vault-panel">
+                  <div><strong>4MB</strong><span>文件分片加密</span></div>
+                  <div><strong>64MB+</strong><span>自动后台导入</span></div>
+                  <div><strong>0</strong><span>云端账户依赖</span></div>
                 </div>
               </div>
             </div>
           </div>
+          <div class="float-card">
+            <strong>保险柜导入完成</strong>
+            <p>照片原件已移除，加密文件只保留在本地密笺保险柜。</p>
+          </div>
         </div>
       </div>
+    </section>
 
-      <section id="privacy">
-        <div class="wrap">
-          <div class="section-head">
-            <h2>为本地隐私而做</h2>
-            <p>密笺不把你的内容交给服务器。它把安全边界放回这台 Mac、你的密码、你的恢复码和你的备份习惯上。</p>
-          </div>
-          <div class="grid">
-            <article class="card">
-              <span class="icon">1</span>
-              <h3>没有云端账户</h3>
-              <p>应用不提供云同步、不上传笔记、不做行为分析，也没有广告和会员入口。</p>
-            </article>
-            <article class="card">
-              <span class="icon">2</span>
-              <h3>管理员看不到笔记</h3>
-              <p>管理员负责批准注册、管理用户和备份还原，但不能直接查看普通用户的加密内容。</p>
-            </article>
-            <article class="card">
-              <span class="icon">3</span>
-              <h3>忘记密码也有边界</h3>
-              <p>恢复码只显示一次。没有用户密码和恢复码时，管理员密码也不能变成万能钥匙。</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section id="vault" class="band">
-        <div class="wrap">
-          <div class="section-head">
-            <h2>保险柜可以认真装大文件</h2>
-            <p>照片、PDF、压缩包、视频素材都可以进入独立保险柜。新版本使用分片加密，超大文件后台导入，导出时流式解密。</p>
-          </div>
-          <div class="flow">
-            <article class="item">
-              <h3>选择文件</h3>
-              <p>从系统文件面板选择照片或文件，密笺显式使用系统授予的访问权限。</p>
-            </article>
-            <article class="item">
-              <h3>分片加密</h3>
-              <p>按 4MB 分块处理，不再把 10GB 文件一次性读进内存。</p>
-            </article>
-            <article class="item">
-              <h3>后台导入</h3>
-              <p>超过 64MB 的文件会放到后台加密，主界面仍可继续响应。</p>
-            </article>
-            <article class="item">
-              <h3>原件移除</h3>
-              <p>成功进入保险柜后，应用会尝试删除原位置文件，并提示未能删除的项目。</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section id="security">
-        <div class="wrap">
-          <div class="section-head">
-            <h2>账号、安全中心与恢复能力</h2>
-            <p>密笺适合一台 Mac 上的个人或多人本地使用。每个用户有独立密码、恢复码和 Touch ID 快捷解锁状态。</p>
-          </div>
-          <div class="compare">
-            <div class="list">
-              <h3>日常使用</h3>
-              <ul>
-                <li>笔记支持置顶、收藏、归档、标签和 Markdown 预览。</li>
-                <li>保险柜文件可以筛选、预览、导出、复制文件名或删除。</li>
-                <li>支持导出 Markdown、TXT 和加密共享文件。</li>
-                <li>首次进入有简介，应用内保留更新日志和法律声明。</li>
-              </ul>
-            </div>
-            <div class="list">
-              <h3>安全控制</h3>
-              <ul>
-                <li>安全中心集中显示账号角色、Touch ID、高级保护和自动锁定。</li>
-                <li>休眠、切换用户或闲置超时后自动锁定并清空内存内容。</li>
-                <li>支持本地备份和从备份还原，不依赖云端恢复。</li>
-                <li>主窗口禁止系统窗口共享，搜索只在解锁后的内存中进行。</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="download">
-        <div class="wrap">
-          <div class="cta">
-            <div>
-              <h2>把私密笔记留在本机。</h2>
-              <p>密笺适合保存本地笔记、照片、文件和需要谨慎管理的个人资料。纯免费，没有会员和购买门槛。</p>
-            </div>
-            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载 zip 版本</a>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer>
+    <section id="privacy" class="white">
       <div class="wrap">
-        密笺 CipherNotes · 本地加密，隐私优先 · 需要 macOS 14 或更高版本
+        <div class="section-head">
+          <h2>不是云笔记的弱化版，而是本地隐私的完整版。</h2>
+          <p>密笺把安全边界放在本机、密码、恢复码和备份上。它不需要服务器来证明自己安全，也不会把你的内容拿去换便利。</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="feature-icon">本</div>
+            <h3>纯本地存储</h3>
+            <p>笔记、账号、附件索引和保险柜文件都保存在本机。没有云同步，没有远程账号，也没有隐藏的分析脚本。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">密</div>
+            <h3>内容加密后落盘</h3>
+            <p>应用写入磁盘的是加密数据。即使直接打开数据文件，也不会看到明文笔记或文件内容。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">免</div>
+            <h3>纯免费，无付费开关</h3>
+            <p>已经移除所有付费、授权、会员和购买逻辑。核心功能不再被“高级版”这种东西切开。</p>
+          </article>
+        </div>
       </div>
-    </footer>
-  </div>
+    </section>
+
+    <section id="vault" class="deep-band">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>保险柜不是摆设。大照片库也能认真装。</h2>
+          <p>新文件使用分片加密格式。导入大文件时不把整个文件塞进内存，导出也按流式解密写回，10GB 图片或素材包不会把界面拖死。</p>
+        </div>
+        <div class="vault-flow">
+          <article class="flow-step">
+            <h3>系统授权</h3>
+            <p>通过 macOS 文件面板选择文件，按系统授予的安全访问权限读取和导出。</p>
+          </article>
+          <article class="flow-step">
+            <h3>分片加密</h3>
+            <p>每 4MB 作为一个加密块处理，避免一次性占用巨大内存。</p>
+          </article>
+          <article class="flow-step">
+            <h3>后台导入</h3>
+            <p>超过 64MB 的文件进入后台任务，主窗口继续响应搜索、编辑和切换。</p>
+          </article>
+          <article class="flow-step">
+            <h3>流式导出</h3>
+            <p>导出时逐块解密写入目标位置，兼容旧格式附件，也照顾新版本大文件。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="accounts">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>管理员管秩序，用户管内容。</h2>
+          <p>密笺适合一台 Mac 上的个人、多身份或家庭场景。管理员能维护账号和数据生命周期，但普通用户的内容仍然由自己的密码和恢复码保护。</p>
+        </div>
+        <div class="split">
+          <div class="panel">
+            <h3>用户体验</h3>
+            <ul class="checklist">
+              <li>首次进入显示产品简介，应用内保留更新日志、法律说明和隐私声明。</li>
+              <li>笔记支持置顶、收藏、归档、标签、Markdown 预览和加密分享文件。</li>
+              <li>保险柜支持预览、筛选、复制文件名、导出和删除。</li>
+              <li>Touch ID 可作为快捷解锁入口，闲置、休眠或切换用户后自动锁定。</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>管理能力</h3>
+            <ul class="checklist">
+              <li>管理员密码可以修改，管理员和普通用户权限边界更完整。</li>
+              <li>支持删除任意用户及其数据，也支持清空全部数据重新开始。</li>
+              <li>本地备份和还原不依赖云端，适合离线保存和迁移。</li>
+              <li>恢复码只显示一次，管理员密码不会变成读取用户内容的万能钥匙。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="white">
+      <div class="wrap">
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="feature-icon">搜</div>
+            <h3>搜索更干净</h3>
+            <p>历史输出和构建产物不再塞进项目索引。真正要被搜索的，是源码、网站和文档。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">权</div>
+            <h3>权限更克制</h3>
+            <p>导入、导出、备份、还原都围绕系统文件授权做，不偷偷扩大文件访问范围。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">稳</div>
+            <h3>测试守住核心</h3>
+            <p>加密、恢复码、多账号、管理员能力、保险柜和大文件路径都有自动测试覆盖。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <div class="quote">
+          <div>
+            <h2>把私密资料留给自己，不留给平台。</h2>
+            <p>密笺适合保存个人笔记、证件照片、离线资料、项目备忘和不想进云端的文件。需要 macOS 14 或更高版本。</p>
+            <div class="hero-actions">
+              <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载 pkg 安装器</a>
+              <a class="button dark" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载 zip 版本</a>
+            </div>
+          </div>
+          <div class="release-card">
+            <strong>当前发布包</strong>
+            <span>纯免费版本 · 本地加密 · 大文件保险柜 · 管理员与普通用户分离</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">密笺 CipherNotes · Local-first encrypted notes and file vault for macOS · 本地加密，隐私优先</div>
+  </footer>
 </body>
 </html>
