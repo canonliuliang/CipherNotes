@@ -49,6 +49,7 @@ final class VaultStore: ObservableObject {
         accounts = Self.accountSummaries(at: self.vaultURL)
         cleanOrphanedAttachments()
         installPrivacyObservers()
+        seedDemoVaultIfRequested()
     }
 
     isolated deinit {
@@ -1298,8 +1299,69 @@ final class VaultStore: ObservableObject {
     }
 
     nonisolated private static func defaultVaultURL() -> URL {
+        if let path = ProcessInfo.processInfo.environment["CIPHERNOTES_VAULT_PATH"], !path.isEmpty {
+            return URL(fileURLWithPath: path)
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return support.appendingPathComponent("CipherNotes", isDirectory: true).appendingPathComponent("vault.json")
+    }
+
+    private func seedDemoVaultIfRequested() {
+        guard ProcessInfo.processInfo.environment["CIPHERNOTES_DEMO_DATA"] == "1",
+              state == .needsAdminSetup else { return }
+
+        let adminPassword = "demo-admin"
+        let userPassword = "demo-password"
+        createAdminPassword(password: adminPassword, confirmation: adminPassword)
+        registerUser(
+            adminPassword: adminPassword,
+            username: "演示账户",
+            password: userPassword,
+            confirmation: userPassword,
+            role: .admin
+        )
+        dismissRecoveryCode()
+
+        let first = addNote()
+        updateNote(
+            id: first,
+            title: "本地安全计划",
+            body: """
+            - 所有笔记在本机加密保存
+            - 保险柜文件使用分片加密
+            - 管理员不能直接查看普通用户内容
+
+            今日重点：整理备份、检查恢复码、把重要照片移入保险柜。
+            """
+        )
+        updateTags(noteID: first, tags: ["隐私", "备份", "保险柜"])
+        togglePinned(noteID: first)
+        toggleFavorite(noteID: first)
+
+        let second = addNote()
+        updateNote(
+            id: second,
+            title: "保险柜整理",
+            body: "证件照片、合同扫描件和离线资料放入保险柜；大文件后台导入，导出时流式解密。"
+        )
+        updateTags(noteID: second, tags: ["照片", "文件"])
+
+        let third = addNote()
+        updateNote(
+            id: third,
+            title: "共享笔记说明",
+            body: "导出 .ciphernote 时使用共享密码加密，应用不会保存共享密码。"
+        )
+        updateTags(noteID: third, tags: ["共享"])
+
+        vaultItems = [
+            VaultAttachment(fileName: "身份证扫描件.png", contentType: "image/png", byteCount: 2_400_000),
+            VaultAttachment(fileName: "家庭备份清单.pdf", contentType: "application/pdf", byteCount: 840_000),
+            VaultAttachment(fileName: "照片库归档.zip", contentType: "application/zip", byteCount: 10_240_000_000)
+        ]
+        setAdvancedDataProtectionForCurrentAccount(true)
+        errorMessage = nil
+        persist()
     }
 
     nonisolated private static func initialState(for url: URL) -> VaultState {

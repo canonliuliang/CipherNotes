@@ -228,6 +228,38 @@
       align-items: center;
     }
 
+    .product-shot {
+      width: min(720px, 100%);
+      margin-left: auto;
+      padding: 10px;
+      border: 1px solid rgba(190, 203, 216, .92);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .78);
+      box-shadow: var(--shadow);
+    }
+
+    .product-shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+    }
+
+    .shot-caption {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 4px 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .shot-caption strong {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
     .mac-window {
       width: min(660px, 100%);
       margin-left: auto;
@@ -629,6 +661,7 @@
         grid-template-columns: 1fr;
       }
       .stage { min-height: auto; }
+      .product-shot { margin: 26px 0 0; }
       .mac-window { margin: 26px 0 0; }
       .feature-grid,
       .vault-flow {
@@ -700,40 +733,12 @@
         </div>
 
         <div class="stage" aria-label="密笺界面示意">
-          <div class="mac-window">
-            <div class="traffic"><span></span><span></span><span></span></div>
-            <div class="app-shell">
-              <aside class="side">
-                <div class="mini-brand"><img src="./icon.png" alt="">密笺</div>
-                <div class="rail">
-                  <div class="active"></div>
-                  <div></div>
-                  <div style="width: 82%"></div>
-                  <div style="width: 64%"></div>
-                  <div style="width: 74%"></div>
-                </div>
-              </aside>
-              <div class="workspace">
-                <div class="topbar">
-                  <div class="search"></div>
-                  <div class="status">高级保护已开启</div>
-                </div>
-                <h2 class="doc-title">本地安全计划</h2>
-                <div class="doc-meta">管理员账号 · 自动锁定 5 分钟 · Touch ID 可用</div>
-                <div class="line"></div>
-                <div class="line mid"></div>
-                <div class="line short"></div>
-                <div class="vault-panel">
-                  <div><strong>4MB</strong><span>文件分片加密</span></div>
-                  <div><strong>64MB+</strong><span>自动后台导入</span></div>
-                  <div><strong>0</strong><span>云端账户依赖</span></div>
-                </div>
-              </div>
+          <div class="product-shot">
+            <img src="./media/app-screenshot.png" alt="密笺真实主界面截图">
+            <div class="shot-caption">
+              <strong>真实应用界面</strong>
+              <span>演示账户 · 本地加密 · 高级数据保护</span>
             </div>
-          </div>
-          <div class="float-card">
-            <strong>保险柜导入完成</strong>
-            <p>照片原件已移除，加密文件只保留在本地密笺保险柜。</p>
           </div>
         </div>
       </div>

@@ -6,6 +6,8 @@
 
 ![CI](https://github.com/canonliuliang/CipherNotes/actions/workflows/ci.yml/badge.svg)
 
+![密笺主界面](docs/media/app-screenshot.png)
+
 ## 核心能力
 
 - 本地加密笔记：标题和正文使用 AES-256-GCM 加密后写入磁盘。
