@@ -28,9 +28,7 @@ jobs:
         run: |
           mkdir -p public
           cp Website/index.html public/index.html
-          cp Assets/AppIcon-1024.png public/app-icon.png
           sed -i \
-            -e 's|../Assets/AppIcon-1024.png|app-icon.png|g' \
             -e "s|../outputs/密笺安装器.pkg|https://github.com/${GITHUB_REPOSITORY}/releases/latest|g" \
             -e "s|../outputs/密笺-macOS.zip|https://github.com/${GITHUB_REPOSITORY}/releases/latest|g" \
             public/index.html

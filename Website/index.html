@@ -77,6 +77,24 @@
       box-shadow: 0 8px 18px rgba(15, 108, 189, .18);
     }
 
+    .logo-mark {
+      display: inline-grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      color: #fff;
+      background: linear-gradient(145deg, var(--blue), var(--teal));
+      box-shadow: 0 8px 18px rgba(15, 108, 189, .18);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .mock-brand .logo-mark {
+      width: 42px;
+      height: 42px;
+    }
+
     .brand strong {
       display: block;
       font-size: 18px;
@@ -546,7 +564,7 @@
     <header>
       <div class="wrap nav">
         <a class="brand" href="#top" aria-label="密笺首页">
-          <img src="../Assets/AppIcon-1024.png" alt="密笺图标">
+          <span class="logo-mark" aria-hidden="true">密</span>
           <span>
             <strong>密笺</strong>
             <span>CipherNotes</span>
@@ -586,7 +604,7 @@
             <div class="mock-body">
               <aside class="sidebar">
                 <div class="mock-brand">
-                  <img src="../Assets/AppIcon-1024.png" alt="">
+                  <span class="logo-mark" aria-hidden="true">密</span>
                   <strong>密笺</strong>
                 </div>
                 <div class="side-line active"></div>

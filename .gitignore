@@ -2,5 +2,7 @@
 .build/
 work/
 outputs/
+Assets/AppIcon-1024.png
+Assets/AppIcon.icns
 *.xcuserstate
 *.swp

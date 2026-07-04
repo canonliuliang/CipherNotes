@@ -28,7 +28,7 @@ mkdir -p "$OUTPUTS_DIR"
 
 cp "$ROOT_DIR/README.md" "$OUTPUTS_DIR/使用说明.md"
 cp "$ROOT_DIR/Assets/AppIcon-1024.png" "$OUTPUTS_DIR/密笺图标.png"
-sed 's|../Assets/AppIcon-1024.png|密笺图标.png|g; s|../outputs/密笺安装器.pkg|密笺安装器.pkg|g; s|../outputs/密笺-macOS.zip|密笺-macOS.zip|g' "$ROOT_DIR/Website/index.html" > "$OUTPUTS_DIR/产品介绍.html"
+sed 's|../outputs/密笺安装器.pkg|密笺安装器.pkg|g; s|../outputs/密笺-macOS.zip|密笺-macOS.zip|g' "$ROOT_DIR/Website/index.html" > "$OUTPUTS_DIR/产品介绍.html"
 
 rm -f "$OUTPUTS_DIR/密笺安装器.pkg" "$OUTPUTS_DIR/密笺-macOS.zip"
 if productbuild --component "$APP_PATH" /Applications "$OUTPUTS_DIR/密笺安装器.pkg" >"$PRODUCTBUILD_LOG" 2>&1; then
