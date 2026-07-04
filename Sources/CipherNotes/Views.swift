@@ -10,6 +10,31 @@ private func withSecurityScopedAccess<T>(_ url: URL, _ body: () throws -> T) ret
     return try body()
 }
 
+private func requestDangerAuthorization(title: String, message: String, confirmationPrompt: String) -> (password: String, confirmation: String)? {
+    let passwordField = NSSecureTextField()
+    passwordField.placeholderString = "当前账户密码"
+    passwordField.frame.size.width = 320
+
+    let confirmationField = NSTextField()
+    confirmationField.placeholderString = confirmationPrompt
+    confirmationField.frame.size.width = 320
+
+    let stack = NSStackView(views: [passwordField, confirmationField])
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.frame.size = NSSize(width: 320, height: 58)
+
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = message
+    alert.alertStyle = .critical
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "继续")
+    alert.addButton(withTitle: "取消")
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    return (passwordField.stringValue, confirmationField.stringValue)
+}
+
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
     case light
@@ -119,7 +144,7 @@ struct RootView: View {
                     }
                 } else {
                     switch store.state {
-                    case .needsAdminSetup: AdminSetupView()
+                    case .needsAdminSetup: UnlockView()
                     case .needsMigration: MigrationView()
                     case .locked: UnlockView()
                     case .unlocked: NotesView()
@@ -154,7 +179,7 @@ struct RootView: View {
                     Button {
                         showingUserManagement = true
                     } label: {
-                        Label("用户管理", systemImage: "person.2.badge.gearshape")
+                        Label("账户与安全", systemImage: "person.2.badge.gearshape")
                     }
                 }
                 Button {
@@ -478,11 +503,11 @@ struct IntroView: View {
                     .foregroundStyle(.secondary)
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 14) {
                     introRow("lock.shield.fill", "本地加密", "笔记和保险柜文件只保存在这台 Mac。")
-                    introRow("person.2.fill", "多账号", "账号分为管理员账号和普通账号，便于多人共用同一台 Mac。")
+                    introRow("person.2.fill", "多账号", "每个账户平等独立，便于多人共用同一台 Mac。")
                     introRow("checkmark.seal.fill", "纯免费", "所有本地功能都可直接使用，没有会员、广告或购买入口。")
-                    introRow("hand.raised.fill", "隐私优先", "管理员可以管理账号，但不能查看普通用户的数据。")
+                    introRow("hand.raised.fill", "隐私优先", "账户只能管理自己的数据，不能删除或查看其他账户内容。")
                 }
-                Text("接下来会先创建一个本机管理员密码，然后创建你的第一个账号。")
+                Text("接下来创建你的第一个本地账户。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
@@ -512,50 +537,8 @@ struct IntroView: View {
     }
 }
 
-struct AdminSetupView: View {
-    @EnvironmentObject private var store: VaultStore
-    @State private var adminPassword = ""
-    @State private var confirmation = ""
-    @State private var sealArmed = false
-
-    var body: some View {
-        VStack(spacing: 24) {
-            BrandHeader()
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Spacer()
-                    VaultSealAnimation(active: sealArmed)
-                    Spacer()
-                }
-                .padding(.bottom, 4)
-                Text("创建管理员密码").font(.title2.bold())
-                Text("管理员密码只用于允许注册新用户和升级旧保险库，不能直接查看任何用户的笔记。")
-                    .font(.callout).foregroundStyle(.secondary)
-                SecureField("管理员密码", text: $adminPassword)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("再次输入管理员密码", text: $confirmation)
-                    .textFieldStyle(.roundedBorder)
-                ErrorText(store.errorMessage)
-                Button("创建管理员密码") {
-                    sealArmed = true
-                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                    store.createAdminPassword(password: adminPassword, confirmation: confirmation)
-                    adminPassword = ""
-                    confirmation = ""
-                }
-                .buttonStyle(.borderedProminent).controlSize(.large)
-            }
-            .glassPanel()
-            .frame(maxWidth: 440)
-        }
-        .padding(40)
-    }
-}
-
 struct MigrationView: View {
     @EnvironmentObject private var store: VaultStore
-    @State private var adminPassword = ""
-    @State private var adminConfirmation = ""
     @State private var username = ""
     @State private var oldPassword = ""
     @State private var enableTouchID = false
@@ -565,13 +548,8 @@ struct MigrationView: View {
             BrandHeader()
             VStack(alignment: .leading, spacing: 14) {
                 Text("升级旧保险库").font(.title2.bold())
-                Text("这一步会保留旧笔记，同时补上新的管理员密码和用户登录体系。旧密码会成为该用户的登录密码。")
+                Text("这一步会保留旧笔记，并把旧密码作为这个本地账户的登录密码。")
                     .font(.callout).foregroundStyle(.secondary)
-                SecureField("新管理员密码", text: $adminPassword)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("再次输入管理员密码", text: $adminConfirmation)
-                    .textFieldStyle(.roundedBorder)
-                Divider()
                 TextField("旧版用户名", text: $username)
                     .textFieldStyle(.roundedBorder)
                     .textContentType(.username)
@@ -586,14 +564,10 @@ struct MigrationView: View {
                 ErrorText(store.errorMessage)
                 Button("升级并进入") {
                     store.migrateLegacyVault(
-                        adminPassword: adminPassword,
-                        adminConfirmation: adminConfirmation,
                         username: username,
                         oldPassword: oldPassword,
                         enableTouchID: enableTouchID
                     )
-                    adminPassword = ""
-                    adminConfirmation = ""
                     oldPassword = ""
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)
@@ -623,12 +597,10 @@ struct UnlockView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var confirmation = ""
-    @State private var adminPassword = ""
     @State private var recoveryCode = ""
     @State private var selectedAccountID: UUID?
     @State private var enableTouchID = false
     @State private var enableTouchIDAfterPasswordLogin = false
-    @State private var accountRole = AccountRole.standard
     @State private var touchIDUnlocking = false
     @FocusState private var focused: Bool
 
@@ -669,13 +641,12 @@ struct UnlockView: View {
             }
             .glassPanel()
             .frame(width: 420)
-            Text("管理员管注册 · 用户管自己的加密笔记 · 无云端").font(.caption).foregroundStyle(.secondary)
+            Text("平等本地账户 · 各自加密 · 无云端").font(.caption).foregroundStyle(.secondary)
         }
         .padding(40)
         .onAppear {
             mode = store.userCount == 0 ? .register : .login
             selectedAccountID = selectedAccountID ?? store.accounts.first?.id
-            if store.userCount == 0 { accountRole = .admin }
             focused = true
         }
         .onChange(of: store.accounts) { _, accounts in
@@ -684,7 +655,6 @@ struct UnlockView: View {
             }
             if accounts.isEmpty {
                 mode = .register
-                accountRole = .admin
             }
         }
         .onChange(of: selectedAccountID) { _, _ in
@@ -774,21 +744,12 @@ struct UnlockView: View {
 
     private var registerForm: some View {
         VStack(spacing: 14) {
-            SecureField("管理员密码", text: $adminPassword)
-                .textFieldStyle(.roundedBorder)
             TextField("新用户名", text: $username)
                 .textFieldStyle(.roundedBorder)
                 .textContentType(.username)
                 .focused($focused)
-            Picker("账号类型", selection: $accountRole) {
-                ForEach(AccountRole.allCases) { role in
-                    Text(role.label).tag(role)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(store.userCount == 0)
             if store.userCount == 0 {
-                Text("第一个账号会作为管理员账号创建，用于管理本机账号；管理员仍不能查看其他用户数据。")
+                Text("第一个账户会创建这台 Mac 上的本地保险库。之后也可以继续创建其他平等账户。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -807,7 +768,7 @@ struct UnlockView: View {
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .frame(maxWidth: .infinity)
                 .keyboardShortcut(.defaultAction)
-            Text("管理员密码只批准注册，不会解密这个用户的笔记。")
+            Text("每个本地账户都由自己的密码和恢复码保护。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -854,16 +815,13 @@ struct UnlockView: View {
 
     private func register() {
         store.registerUser(
-            adminPassword: adminPassword,
             username: username,
             password: password,
             confirmation: confirmation,
-            enableTouchID: enableTouchID,
-            role: accountRole
+            enableTouchID: enableTouchID
         )
         if store.state == .unlocked {
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-            adminPassword = ""
             password = ""
             confirmation = ""
         }
@@ -965,7 +923,7 @@ struct NotesView: View {
     }
 
     private var currentAccountBadgeText: String {
-        "\(store.currentAccountRole.shortLabel)账号 · 纯免费"
+        "本地账户 · 纯免费"
     }
 
     var body: some View {
@@ -1352,7 +1310,12 @@ struct NotesView: View {
         alert.addButton(withTitle: "还原")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        store.restoreVault(from: url)
+        guard let auth = requestDangerAuthorization(
+            title: "确认当前账户",
+            message: "请输入当前账户密码，并输入“还原保险库”继续。",
+            confirmationPrompt: "输入：还原保险库"
+        ) else { return }
+        store.restoreVault(from: url, currentPassword: auth.password, confirmationText: auth.confirmation)
     }
 
 
@@ -1934,7 +1897,7 @@ struct SecurityCenterView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("安全中心", systemImage: "shield.checkered")
                         .font(.title2.bold())
-                    Text("集中查看当前账号、本地保险库和恢复能力。所有操作都只在这台 Mac 上完成。")
+                    Text("集中查看当前账户、本地保险库和恢复能力。所有操作都只在这台 Mac 上完成。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -1946,8 +1909,8 @@ struct SecurityCenterView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 156), spacing: 12)], spacing: 12) {
-                        securityMetric("当前账号", store.signedInUsername ?? "未登录", "person.crop.circle.fill", .mint)
-                        securityMetric("账号角色", store.currentAccountRole.shortLabel, "person.badge.key.fill", .blue)
+                        securityMetric("当前账户", store.signedInUsername ?? "未登录", "person.crop.circle.fill", .mint)
+                        securityMetric("账户模型", "平等账户", "person.2.fill", .blue)
                         securityMetric("笔记", "\(store.notes.count) 条", "note.text", .indigo)
                         securityMetric("保险柜", "\(store.vaultItems.count) 个文件", "lock.rectangle.stack.fill", .teal)
                     }
@@ -2100,18 +2063,32 @@ struct SecurityCenterView: View {
     }
 
     private func securityRow(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: systemImage)
-                .frame(width: 22)
-                .foregroundStyle(tint)
-            Text(title)
-                .font(.callout.weight(.medium))
-            Spacer(minLength: 16)
-            Text(value)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 22)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 16)
+                Text(value)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Label(title, systemImage: systemImage)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(tint)
+                Text(value)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         }
     }
 
@@ -2138,7 +2115,12 @@ struct SecurityCenterView: View {
         alert.addButton(withTitle: "还原")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        store.restoreVault(from: url)
+        guard let auth = requestDangerAuthorization(
+            title: "确认当前账户",
+            message: "请输入当前账户密码，并输入“还原保险库”继续。",
+            confirmationPrompt: "输入：还原保险库"
+        ) else { return }
+        store.restoreVault(from: url, currentPassword: auth.password, confirmationText: auth.confirmation)
     }
 
     private func copyVaultPath() {
@@ -2159,139 +2141,156 @@ struct UserManagementView: View {
     @EnvironmentObject private var store: VaultStore
     @Environment(\.dismiss) private var dismiss
     @AppStorage("hasSeenCipherNotesIntro") private var hasSeenIntro = false
-    @State private var adminPassword = ""
-    @State private var newAdminPassword = ""
-    @State private var newAdminConfirmation = ""
-    @State private var pendingDelete: AccountSummary?
+    @State private var passwordCurrent = ""
+    @State private var passwordNew = ""
+    @State private var passwordConfirmation = ""
+    @State private var currentPassword = ""
+    @State private var confirmationText = ""
     @State private var confirmingFullReset = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label("用户管理", systemImage: "person.2.badge.gearshape")
-                .font(.title2.bold())
-            Text("管理员可以删除任何用户，但不能查看用户笔记。删除会直接销毁该用户的加密笔记、恢复码包装密钥和 Touch ID 快捷解锁项。")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            SecureField("管理员密码（如果管理员密码为空，可直接留空）", text: $adminPassword)
-                .textFieldStyle(.roundedBorder)
-            if confirmingFullReset {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("确认清空这台 Mac 上的所有密笺数据？", systemImage: "exclamationmark.triangle.fill")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                    Text("继续后会删除所有用户、笔记、保险柜文件、恢复码包装密钥和 Touch ID 快捷解锁项。这个操作不可恢复。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Button("取消") {
-                            confirmingFullReset = false
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Label("账户与安全", systemImage: "person.2.badge.gearshape")
+                    .font(.title2.bold())
+                Text("这台 Mac 上的账户彼此可见，但只能管理当前登录账户。其他账户的数据由各自密码和恢复码保护。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if store.accounts.isEmpty {
+                    ContentUnavailableView("暂无账户", systemImage: "person.crop.circle.badge.questionmark")
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(store.accounts, id: \.id) { account in
+                            accountRow(account)
                         }
-                        Spacer()
-                        Button("清空全部数据并重新开始", role: .destructive) {
-                            store.eraseAllDataAndStartFresh(adminPassword: adminPassword)
-                            if store.state == .needsAdminSetup {
-                                hasSeenIntro = false
-                                adminPassword = ""
-                                newAdminPassword = ""
-                                newAdminConfirmation = ""
-                                confirmingFullReset = false
-                                dismiss()
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
                     }
                 }
-                .padding(12)
-                .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                Text("修改管理员密码")
-                    .font(.headline)
-                SecureField("新管理员密码", text: $newAdminPassword)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("再次输入新管理员密码", text: $newAdminConfirmation)
-                    .textFieldStyle(.roundedBorder)
+
+                Divider()
+                passwordSection
+                Divider()
+                dangerZone
+                ErrorText(store.errorMessage)
                 HStack {
                     Spacer()
-                    Button("更新管理员密码") {
-                        store.changeAdminPassword(
-                            currentPassword: adminPassword,
-                            newPassword: newAdminPassword,
-                            confirmation: newAdminConfirmation
-                        )
-                        if store.errorMessage == "管理员密码已更新" {
-                            adminPassword = ""
-                            newAdminPassword = ""
-                            newAdminConfirmation = ""
-                        }
-                    }
-                    .disabled(newAdminPassword != newAdminConfirmation)
-                }
-            }
-            .padding(12)
-            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            Divider()
-            if store.accounts.isEmpty {
-                ContentUnavailableView("暂无用户", systemImage: "person.crop.circle.badge.questionmark")
-            } else if let pendingDelete {
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("确认销毁“\(pendingDelete.displayName)”？", systemImage: "exclamationmark.triangle.fill")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                    Text("管理员不能查看这个用户的笔记。继续后，应用会移除该用户的加密笔记、恢复码包装密钥和 Touch ID 快捷解锁项，数据不可恢复。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Button("取消") {
-                            self.pendingDelete = nil
-                        }
-                        Spacer()
-                        Button("确认删除并销毁数据", role: .destructive) {
-                            store.deleteUser(userID: pendingDelete.id, adminPassword: adminPassword)
-                            self.pendingDelete = nil
-                        }
+                    Button("关闭") { dismiss() }
                         .buttonStyle(.borderedProminent)
-                    }
+                        .keyboardShortcut(.defaultAction)
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            } else {
-                List {
-                    ForEach(store.accounts, id: \.id) { account in
-                        accountRow(account)
-                    }
-                }
-                .frame(minHeight: 180)
             }
-            ErrorText(store.errorMessage)
+            .padding(24)
+        }
+        .frame(width: 600, height: 620)
+    }
+
+    private var passwordSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("当前账户密码", systemImage: "key.fill")
+                .font(.headline)
+            SecureField("当前账户密码", text: $passwordCurrent)
+                .textFieldStyle(.roundedBorder)
+            SecureField("新账户密码", text: $passwordNew)
+                .textFieldStyle(.roundedBorder)
+            SecureField("再次输入新账户密码", text: $passwordConfirmation)
+                .textFieldStyle(.roundedBorder)
             HStack {
-                Button("清空全部数据", role: .destructive) {
-                    confirmingFullReset = true
-                }
                 Spacer()
-                Button("关闭") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+                Button("更新密码") {
+                    store.changeCurrentUserPassword(
+                        currentPassword: passwordCurrent,
+                        newPassword: passwordNew,
+                        confirmation: passwordConfirmation
+                    )
+                    if store.errorMessage == "当前账户密码已更新" {
+                        passwordCurrent = ""
+                        passwordNew = ""
+                        passwordConfirmation = ""
+                    }
+                }
+                .disabled(passwordNew != passwordConfirmation)
             }
         }
-        .padding(24)
-        .frame(width: 560, height: 620)
+        .padding(12)
+        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var dangerZone: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("危险操作", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text("删除当前账户、清空全部数据都需要当前账户密码和确认文字，并会再弹出 macOS 确认。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            SecureField("当前账户密码", text: $currentPassword)
+                .textFieldStyle(.roundedBorder)
+            TextField(confirmingFullReset ? "输入：清空全部数据" : "输入：删除我的账户", text: $confirmationText)
+                .textFieldStyle(.roundedBorder)
+            ViewThatFits(in: .horizontal) {
+                dangerButtons
+                VStack(alignment: .leading, spacing: 8) {
+                    deleteCurrentAccountButton
+                    eraseAllDataButton
+                }
+            }
+        }
+        .padding(12)
+        .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var dangerButtons: some View {
+        HStack {
+            deleteCurrentAccountButton
+            Spacer()
+            eraseAllDataButton
+        }
+    }
+
+    private var deleteCurrentAccountButton: some View {
+        Button("删除当前账户", role: .destructive) {
+            guard confirmWithSystem(title: "删除当前账户？", message: "这会永久删除当前账户的笔记、保险柜文件、恢复码包装密钥和 Touch ID 快捷解锁项。") else { return }
+            store.deleteCurrentUser(password: currentPassword, confirmationText: confirmationText)
+            if store.state == .needsAdminSetup {
+                hasSeenIntro = false
+            }
+            if store.state != .unlocked { dismiss() }
+        }
+        .disabled(store.currentAccountID == nil)
+    }
+
+    private var eraseAllDataButton: some View {
+        Button("清空全部数据", role: .destructive) {
+            confirmingFullReset = true
+            guard confirmWithSystem(title: "清空全部密笺数据？", message: "这会永久删除这台 Mac 上所有密笺账户、笔记和保险柜文件。") else { return }
+            store.eraseAllDataAndStartFresh(currentPassword: currentPassword, confirmationText: confirmationText)
+            if store.state == .needsAdminSetup {
+                hasSeenIntro = false
+                currentPassword = ""
+                confirmationText = ""
+                confirmingFullReset = false
+                dismiss()
+            }
+        }
+        .buttonStyle(.borderedProminent)
     }
 
     private func accountRow(_ account: AccountSummary) -> some View {
-        HStack(spacing: 12) {
+        let isCurrent = account.id == store.currentAccountID
+        return HStack(alignment: .top, spacing: 12) {
             Image(systemName: "person.crop.circle.fill")
                 .foregroundStyle(.mint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.displayName)
                     .font(.headline)
-                Text("删除后数据不可恢复")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(isCurrent ? "当前登录账户，可管理自己的安全设置" : "其他本地账户，只显示状态")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Label("\(account.role.shortLabel)账号", systemImage: "person.badge.key")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Label(
                     store.canUseTouchID(userID: account.id) ? "Touch ID 已启用" : "Touch ID 未启用",
                     systemImage: "touchid"
@@ -2305,19 +2304,27 @@ struct UserManagementView: View {
                 .font(.caption2)
                 .foregroundStyle(account.advancedDataProtectionEnabled ? .mint : .secondary)
             }
-            Spacer()
-            if store.canUseTouchID(userID: account.id) {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if isCurrent && store.canUseTouchID(userID: account.id) {
                 Button("关闭 Touch ID") {
                     store.disableTouchID(userID: account.id)
                 }
                 .buttonStyle(.borderless)
+                .lineLimit(1)
             }
-            Button("删除", role: .destructive) {
-                pendingDelete = account
-            }
-            .buttonStyle(.borderless)
         }
-        .padding(.vertical, 4)
+        .padding(10)
+        .background(.quaternary.opacity(isCurrent ? 0.9 : 0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func confirmWithSystem(title: String, message: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "继续")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
@@ -2328,12 +2335,12 @@ struct ChangelogView: View {
         UpdateLogEntry(
             id: "1.0.0",
             version: "1.0.0",
-            title: "纯免费版本与管理员安全补全",
+            title: "纯免费版本与平等本地账户",
             dateText: "2026-07-04",
             items: [
                 "移除会员、购买、恢复购买和所有付费门槛，现有本地功能全部免费可用。",
                 "注册页不再出现会员等级；高级数据保护和恢复码重生成变为普通安全功能。",
-                "用户管理新增修改管理员密码和清空全部数据并重新开始，管理员/普通用户职责更完整。",
+                "账户与安全改为平等本地账户模型：账户可见但只能管理自己，危险操作需要当前账户密码和确认文字。",
                 "新增一键 release 打包脚本，自动测试、构建并更新 app、pkg、zip、说明文档和图标。",
                 "重绘应用图标，改为现代简约的蓝青 Fluent 风格。",
                 "新增安全中心，集中查看账号保护状态、自动锁定、Touch ID、恢复码、备份还原和本地数据位置。",
@@ -2358,12 +2365,12 @@ struct ChangelogView: View {
         UpdateLogEntry(
             id: "0.10.0",
             version: "0.10.0",
-            title: "账号角色与安全能力整理",
+            title: "多账户与安全能力整理",
             dateText: "2026-06-27",
             items: [
                 "首次打开新增应用简介，引导用户理解本地加密、多账号和隐私边界。",
-                "创建账号时可选择管理员账号或普通账号。",
-                "管理员负责批准注册、管理用户和备份还原，但仍不能查看用户笔记。",
+                "创建账号时开始整理多账户模型。",
+                "账户内容由各自密码保护，其他账户不能查看用户笔记。",
                 "高级数据保护、恢复码重生成、保险柜、导入导出等能力均作为本地免费功能提供。"
             ]
         ),
@@ -2376,7 +2383,7 @@ struct ChangelogView: View {
                 "新增账号级高级数据保护开关，每个本地用户可单独开启。",
                 "开启后笔记列表隐藏正文预览，避免旁人从列表扫到内容。",
                 "开启后自动锁定收紧到 1 分钟，重新登录该账号后仍会保持。",
-                "用户管理会显示每个账号的高级数据保护状态，管理员仍不能查看用户数据。"
+                "账户列表会显示每个账号的高级数据保护状态，其他账户仍不能查看用户数据。"
             ]
         ),
         UpdateLogEntry(
@@ -2410,7 +2417,7 @@ struct ChangelogView: View {
             title: "钥匙串弹窗修复与克制动效",
             dateText: "2026-06-27",
             items: [
-                "Touch ID 状态改为保险库元数据，登录页和用户管理不再为了显示按钮读取钥匙串。",
+                "Touch ID 状态改为保险库元数据，登录页和账户管理不再为了显示按钮读取钥匙串。",
                 "新 Touch ID 使用 app.ciphernotes.touchid-v2，旧 Touch ID 用户需用密码登录后重新启用一次。",
                 "新增克制过渡动效和减少动效设置。"
             ]
@@ -2458,18 +2465,18 @@ struct ChangelogView: View {
             dateText: "2026-06-27",
             items: [
                 "修复删除用户后界面状态可能没有同步刷新的问题。",
-                "用户管理改为窗口内二次确认，删除流程更清楚、更可靠。",
+                "账户管理改为窗口内二次确认，删除流程更清楚、更可靠。",
                 "新增外观选择：跟随系统、浅色、深色。"
             ]
         ),
         UpdateLogEntry(
             id: "0.6.0",
             version: "0.6.0",
-            title: "无账号密码限制与管理员销毁用户",
+            title: "无账号密码限制与账户删除",
             dateText: "2026-06-27",
             items: [
                 "取消用户名格式、用户名长度和密码长度限制，空用户名会显示为“未命名账户”。",
-                "管理员可在用户管理中删除任意用户；删除只销毁数据，不能查看用户笔记。",
+                "账户删除只销毁数据，不能查看用户笔记。",
                 "优化按钮禁用、提示文案和误删确认，让流程更贴近真实使用。"
             ]
         ),

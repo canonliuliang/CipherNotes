@@ -32,15 +32,10 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            let adminPassword = "a-local-admin-password"
             let username = "private-user"
             let password = "a-local-user-password"
             XCTAssertEqual(store.state, .needsAdminSetup)
-            store.createAdminPassword(password: adminPassword, confirmation: adminPassword)
-            XCTAssertEqual(store.state, .locked)
-            store.registerUser(adminPassword: "wrong-admin-password", username: username, password: password, confirmation: password)
-            XCTAssertEqual(store.state, .locked)
-            store.registerUser(adminPassword: adminPassword, username: username, password: password, confirmation: password)
+            store.registerUser(username: username, password: password, confirmation: password)
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertEqual(store.userCount, 1)
 
@@ -73,16 +68,14 @@ final class CryptoServiceTests: XCTestCase {
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
-            let adminPassword = "a-local-admin-password"
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: adminPassword, confirmation: adminPassword)
 
-            store.registerUser(adminPassword: adminPassword, username: "alice", password: "alice-password-123", confirmation: "alice-password-123")
+            store.registerUser(username: "alice", password: "alice-password-123", confirmation: "alice-password-123")
             let aliceID = store.addNote()
             store.updateNote(id: aliceID, title: "Alice", body: "Alice 的私密内容")
             store.lock()
 
-            store.registerUser(adminPassword: adminPassword, username: "bob", password: "bob-password-12345", confirmation: "bob-password-12345")
+            store.registerUser(username: "bob", password: "bob-password-12345", confirmation: "bob-password-12345")
             let bobID = store.addNote()
             store.updateNote(id: bobID, title: "Bob", body: "Bob 的私密内容")
             XCTAssertEqual(store.notes.count, 1)
@@ -111,12 +104,10 @@ final class CryptoServiceTests: XCTestCase {
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
-            let adminPassword = "a-local-admin-password"
             let oldPassword = "old-user-password"
             let newPassword = "new-user-password"
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: adminPassword, confirmation: adminPassword)
-            store.registerUser(adminPassword: adminPassword, username: "recover-me", password: oldPassword, confirmation: oldPassword)
+            store.registerUser(username: "recover-me", password: oldPassword, confirmation: oldPassword)
             guard let recoveryCode = store.recoveryCodeToShow else {
                 return XCTFail("注册后应该显示恢复码")
             }
@@ -150,9 +141,7 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "", confirmation: "")
-            XCTAssertEqual(store.state, .locked)
-            store.registerUser(adminPassword: "", username: "", password: "", confirmation: "")
+            store.registerUser(username: "", password: "", confirmation: "")
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertEqual(store.signedInUsername, "未命名账户")
             XCTAssertEqual(store.accounts.map(\.displayName), ["未命名账户"])
@@ -162,41 +151,41 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
-    func testAdminCanDeleteAnyUserAndDestroyTheirData() async throws {
+    func testOnlyCurrentUserCanDeleteTheirOwnAccount() async throws {
         try await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "alice", password: "alice-pass", confirmation: "alice-pass")
+            store.registerUser(username: "alice", password: "alice-pass", confirmation: "alice-pass")
             let aliceID = store.addNote()
             store.updateNote(id: aliceID, title: "Alice 数据", body: "只属于 Alice")
             store.lock()
 
-            store.registerUser(adminPassword: "admin", username: "bob", password: "bob-pass", confirmation: "bob-pass")
+            store.registerUser(username: "bob", password: "bob-pass", confirmation: "bob-pass")
             let bobID = store.addNote()
             store.updateNote(id: bobID, title: "Bob 数据", body: "将被销毁")
             store.lock()
 
-            guard let bob = store.accounts.first(where: { $0.displayName == "bob" }) else {
-                return XCTFail("应该存在 bob 账户")
+            guard let alice = store.accounts.first(where: { $0.displayName == "alice" }) else {
+                return XCTFail("应该存在 alice 账户")
             }
-            store.deleteUser(userID: bob.id, adminPassword: "wrong")
+            store.unlock(userID: alice.id, password: "alice-pass")
+            store.deleteCurrentUser(password: "wrong", confirmationText: "删除我的账户")
             XCTAssertEqual(store.accounts.map(\.displayName).sorted(), ["alice", "bob"])
 
-            store.deleteUser(userID: bob.id, adminPassword: "admin")
-            XCTAssertEqual(store.accounts.map(\.displayName), ["alice"])
-            store.unlock(username: "bob", password: "bob-pass")
-            XCTAssertEqual(store.state, .locked)
+            store.deleteCurrentUser(password: "alice-pass", confirmationText: "删除我的账户")
+            XCTAssertEqual(store.accounts.map(\.displayName), ["bob"])
             store.unlock(username: "alice", password: "alice-pass")
+            XCTAssertEqual(store.state, .locked)
+            store.unlock(username: "bob", password: "bob-pass")
             XCTAssertEqual(store.state, .unlocked)
-            XCTAssertEqual(store.notes.first?.body, "只属于 Alice")
+            XCTAssertEqual(store.notes.first?.body, "将被销毁")
 
             let file = try JSONDecoder().decode(VaultFile.self, from: Data(contentsOf: url))
             XCTAssertEqual(file.users.count, 1)
-            XCTAssertEqual(file.users.first?.displayName, "alice")
+            XCTAssertEqual(file.users.first?.displayName, "bob")
         }
     }
 
@@ -207,8 +196,7 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "solo", password: "solo-pass", confirmation: "solo-pass")
+            store.registerUser(username: "solo", password: "solo-pass", confirmation: "solo-pass")
 
             guard let solo = store.accounts.first else {
                 return XCTFail("应该存在 solo 账户")
@@ -216,9 +204,9 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.userCount, 1)
             XCTAssertEqual(store.state, .unlocked)
 
-            store.deleteUser(userID: solo.id, adminPassword: "admin")
+            store.deleteCurrentUser(password: "solo-pass", confirmationText: "删除我的账户")
 
-            XCTAssertEqual(store.state, .locked)
+            XCTAssertEqual(store.state, .needsAdminSetup)
             XCTAssertEqual(store.userCount, 0)
             XCTAssertTrue(store.accounts.isEmpty)
             XCTAssertTrue(store.notes.isEmpty)
@@ -236,8 +224,7 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "writer", password: "pass", confirmation: "pass")
+            store.registerUser(username: "writer", password: "pass", confirmation: "pass")
             let originalID = store.addNote()
             store.updateNote(id: originalID, title: "计划", body: "第一版")
 
@@ -268,8 +255,7 @@ final class CryptoServiceTests: XCTestCase {
             try secretData.write(to: sourceURL)
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "files", password: "pass", confirmation: "pass")
+            store.registerUser(username: "files", password: "pass", confirmation: "pass")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "纯文字笔记", body: "照片不应该挂在这里")
             store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
@@ -320,8 +306,7 @@ final class CryptoServiceTests: XCTestCase {
             try Data("PDF-B".utf8).write(to: secondURL)
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "safe", password: "pass", confirmation: "pass")
+            store.registerUser(username: "safe", password: "pass", confirmation: "pass")
             _ = store.addNote()
             store.importFilesToVault(urls: [firstURL, secondURL], deleteOriginals: true)
 
@@ -345,8 +330,7 @@ final class CryptoServiceTests: XCTestCase {
             try payload.write(to: sourceURL)
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "large", password: "pass", confirmation: "pass")
+            store.registerUser(username: "large", password: "pass", confirmation: "pass")
             store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
 
             guard let item = store.vaultItems.first else {
@@ -395,8 +379,7 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "protected", password: "pass", confirmation: "pass")
+            store.registerUser(username: "protected", password: "pass", confirmation: "pass")
             XCTAssertFalse(store.currentAccountAdvancedDataProtectionEnabled)
 
             store.autoLockMinutes = 15
@@ -413,67 +396,86 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
-    func testAccountRolesArePerAccount() async throws {
+    func testAccountsAreEqualLocalAccounts() async throws {
         await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "owner", password: "owner", confirmation: "owner", role: .admin)
-            XCTAssertEqual(store.currentAccountRole, .admin)
+            store.registerUser(username: "owner", password: "owner", confirmation: "owner")
+            XCTAssertEqual(store.accounts.first(where: { $0.displayName == "owner" })?.role, .standard)
 
-            store.registerUser(adminPassword: "admin", username: "guest", password: "guest", confirmation: "guest", role: .standard)
-            XCTAssertEqual(store.currentAccountRole, .standard)
-            XCTAssertEqual(store.accounts.first(where: { $0.displayName == "owner" })?.role, .admin)
+            store.registerUser(username: "guest", password: "guest", confirmation: "guest")
+            XCTAssertEqual(store.accounts.first(where: { $0.displayName == "guest" })?.role, .standard)
+            XCTAssertEqual(store.accounts.first(where: { $0.displayName == "owner" })?.role, .standard)
             XCTAssertEqual(store.accounts.first(where: { $0.displayName == "guest" })?.role, .standard)
         }
     }
 
-    func testAdminPasswordCanBeChanged() async throws {
+    func testRegisteringNewUsersDoesNotRequireAdminPassword() async throws {
         await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "old-admin", confirmation: "old-admin")
-            store.registerUser(adminPassword: "old-admin", username: "owner", password: "owner", confirmation: "owner")
-            store.changeAdminPassword(currentPassword: "wrong", newPassword: "new-admin", confirmation: "new-admin")
-            XCTAssertEqual(store.errorMessage, VaultError.adminPasswordInvalid.localizedDescription)
-
-            store.changeAdminPassword(currentPassword: "old-admin", newPassword: "new-admin", confirmation: "new-admin")
-            XCTAssertEqual(store.errorMessage, "管理员密码已更新")
+            store.registerUser(username: "owner", password: "owner", confirmation: "owner")
+            XCTAssertEqual(store.state, .unlocked)
             store.lock()
 
-            store.registerUser(adminPassword: "old-admin", username: "old", password: "old", confirmation: "old")
-            XCTAssertEqual(store.errorMessage, VaultError.adminPasswordInvalid.localizedDescription)
-            store.registerUser(adminPassword: "new-admin", username: "fresh", password: "fresh", confirmation: "fresh")
+            store.registerUser(username: "fresh", password: "fresh", confirmation: "fresh")
             XCTAssertEqual(store.accounts.first(where: { $0.displayName == "fresh" })?.role, .standard)
         }
     }
 
-    func testEraseAllDataRequiresAdminPasswordAndResetsVault() async throws {
+    func testCurrentUserPasswordCanBeChanged() async throws {
         await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "owner", password: "owner", confirmation: "owner")
+            store.registerUser(username: "owner", password: "old-pass", confirmation: "old-pass")
+            let noteID = store.addNote()
+            store.updateNote(id: noteID, title: "Keep", body: "Still here")
+
+            store.changeCurrentUserPassword(currentPassword: "wrong", newPassword: "new-pass", confirmation: "new-pass")
+            store.lock()
+            store.unlock(username: "owner", password: "new-pass")
+            XCTAssertEqual(store.state, .locked)
+
+            store.unlock(username: "owner", password: "old-pass")
+            XCTAssertEqual(store.state, .unlocked)
+            store.changeCurrentUserPassword(currentPassword: "old-pass", newPassword: "new-pass", confirmation: "new-pass")
+            XCTAssertEqual(store.errorMessage, "当前账户密码已更新")
+            store.lock()
+            store.unlock(username: "owner", password: "old-pass")
+            XCTAssertEqual(store.state, .locked)
+            store.unlock(username: "owner", password: "new-pass")
+            XCTAssertEqual(store.state, .unlocked)
+            XCTAssertEqual(store.notes.first?.body, "Still here")
+        }
+    }
+
+    func testEraseAllDataRequiresCurrentUserPasswordAndConfirmation() async throws {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "owner", password: "owner", confirmation: "owner")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "Keep?", body: "No")
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
 
-            store.eraseAllDataAndStartFresh(adminPassword: "wrong")
-            XCTAssertEqual(store.errorMessage, VaultError.adminPasswordInvalid.localizedDescription)
+            store.eraseAllDataAndStartFresh(currentPassword: "wrong", confirmationText: "清空全部数据")
             XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
             XCTAssertEqual(store.state, .unlocked)
 
-            store.eraseAllDataAndStartFresh(adminPassword: "admin")
+            store.eraseAllDataAndStartFresh(currentPassword: "owner", confirmationText: "清空全部数据")
             XCTAssertEqual(store.state, .needsAdminSetup)
             XCTAssertEqual(store.userCount, 0)
             XCTAssertTrue(store.accounts.isEmpty)
@@ -488,10 +490,8 @@ final class CryptoServiceTests: XCTestCase {
             let url = directory.appendingPathComponent("vault.json")
             defer { try? FileManager.default.removeItem(at: directory) }
 
-            let adminPassword = "admin"
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: adminPassword, confirmation: adminPassword)
-            store.registerUser(adminPassword: adminPassword, username: "alice", password: "a", confirmation: "a")
+            store.registerUser(username: "alice", password: "a", confirmation: "a")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "给 Bob", body: "这是一条共享内容")
             guard let package = store.exportSharedNote(id: noteID, sharePassword: "share") else {
@@ -502,7 +502,7 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertFalse(packageText.contains("给 Bob"))
             store.lock()
 
-            store.registerUser(adminPassword: adminPassword, username: "bob", password: "b", confirmation: "b")
+            store.registerUser(username: "bob", password: "b", confirmation: "b")
             XCTAssertNil(store.importSharedNote(data: package, sharePassword: "wrong"))
             XCTAssertEqual(store.notes.count, 0)
             let importedID = store.importSharedNote(data: package, sharePassword: "share")
@@ -555,12 +555,7 @@ final class CryptoServiceTests: XCTestCase {
 
             let store = VaultStore(vaultURL: url)
             XCTAssertEqual(store.state, .needsMigration)
-            store.migrateLegacyVault(
-                adminPassword: "new-admin-password",
-                adminConfirmation: "new-admin-password",
-                username: "new-local-user",
-                oldPassword: password
-            )
+            store.migrateLegacyVault(username: "new-local-user", oldPassword: password)
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertEqual(store.notes, legacyNotes)
             XCTAssertNotNil(store.recoveryCodeToShow)
@@ -608,8 +603,7 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.state, .needsAdminSetup)
             XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
 
-            store.createAdminPassword(password: "new-admin-password", confirmation: "new-admin-password")
-            store.registerUser(adminPassword: "new-admin-password", username: "fresh-user", password: "fresh-user-password", confirmation: "fresh-user-password")
+            store.registerUser(username: "fresh-user", password: "fresh-user-password", confirmation: "fresh-user-password")
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertTrue(store.notes.isEmpty)
         }
@@ -640,8 +634,7 @@ final class CryptoServiceTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: directory) }
 
             let store = VaultStore(vaultURL: url)
-            store.createAdminPassword(password: "admin", confirmation: "admin")
-            store.registerUser(adminPassword: "admin", username: "organizer", password: "pass", confirmation: "pass")
+            store.registerUser(username: "organizer", password: "pass", confirmation: "pass")
             let id = store.addNote()
             store.updateNote(id: id, title: "项目计划", body: "大量新功能")
             store.togglePinned(noteID: id)

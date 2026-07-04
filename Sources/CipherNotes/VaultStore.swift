@@ -41,6 +41,12 @@ final class VaultStore: ObservableObject {
 
     var biometricsAvailable: Bool { keychain.canUseBiometrics }
 
+    private static func placeholderAdminFields(rounds: UInt32 = CryptoService.defaultRounds) throws -> (salt: Data, verifier: Data) {
+        let salt = try CryptoService.randomData(count: 16)
+        let key = try CryptoService.deriveKey(password: "", salt: salt, rounds: rounds)
+        return (salt, Self.adminVerifier(for: key))
+    }
+
     init(vaultURL: URL? = nil, keychain: KeychainService = KeychainService()) {
         self.vaultURL = vaultURL ?? Self.defaultVaultURL()
         self.keychain = keychain
@@ -58,43 +64,12 @@ final class VaultStore: ObservableObject {
         notificationTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
     }
 
-    func createAdminPassword(password: String, confirmation: String) {
-        guard password == confirmation else {
-            errorMessage = "两次输入的管理员密码不一致"
-            return
-        }
-        do {
-            let adminSalt = try CryptoService.randomData(count: 16)
-            let adminKey = try CryptoService.deriveKey(password: password, salt: adminSalt, rounds: CryptoService.defaultRounds)
-            let file = VaultFile(
-                version: Self.vaultVersion,
-                rounds: CryptoService.defaultRounds,
-                adminSalt: adminSalt,
-                adminVerifier: Self.adminVerifier(for: adminKey),
-                users: [],
-                updatedAt: .now
-            )
-            try write(file)
-            vaultFile = nil
-            userCount = 0
-            accounts = []
-            state = .locked
-            errorMessage = "管理员密码已创建。现在可以注册第一个用户。"
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func migrateLegacyVault(adminPassword: String, adminConfirmation: String, username: String, oldPassword: String, enableTouchID: Bool = false) {
+    func migrateLegacyVault(username: String, oldPassword: String, enableTouchID: Bool = false) {
         let normalizedUsername: String
         do {
             normalizedUsername = try validateUsernameFormat(username)
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? error.localizedDescription
-            return
-        }
-        guard adminPassword == adminConfirmation else {
-            errorMessage = "两次输入的管理员密码不一致"
             return
         }
         do {
@@ -109,10 +84,9 @@ final class VaultStore: ObservableObject {
             let rawKey = try CryptoService.open(legacy.wrappedVaultKey, using: oldPasswordKey)
             _ = try decodeNotes(from: legacy.encryptedNotes, rawKey: rawKey)
 
-            let adminSalt = try CryptoService.randomData(count: 16)
-            let adminKey = try CryptoService.deriveKey(password: adminPassword, salt: adminSalt, rounds: CryptoService.defaultRounds)
+            let compatibility = try Self.placeholderAdminFields()
             var built = try makeUser(username: normalizedUsername, displayName: Self.displayName(for: username), password: oldPassword, existingVaultKey: rawKey, existingEncryptedNotes: legacy.encryptedNotes)
-            built.user.role = .admin
+            built.user.role = .standard
             if enableTouchID && biometricsAvailable {
                 do {
                     try keychain.saveVaultKey(rawKey, for: built.user.id)
@@ -124,8 +98,8 @@ final class VaultStore: ObservableObject {
             let file = VaultFile(
                 version: Self.vaultVersion,
                 rounds: CryptoService.defaultRounds,
-                adminSalt: adminSalt,
-                adminVerifier: Self.adminVerifier(for: adminKey),
+                adminSalt: compatibility.salt,
+                adminVerifier: compatibility.verifier,
                 users: [built.user],
                 updatedAt: .now
             )
@@ -162,10 +136,14 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    func eraseAllDataAndStartFresh(adminPassword: String) {
+    func eraseAllDataAndStartFresh(currentPassword: String, confirmationText: String) {
+        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "清空全部数据" else {
+            errorMessage = "请输入“清空全部数据”以确认"
+            return
+        }
         do {
             let file = try readVaultFile()
-            try validateAdminPassword(adminPassword, against: file)
+            try validateCurrentUserPassword(currentPassword, against: file)
             keychain.deleteAllVaultKeys()
             if FileManager.default.fileExists(atPath: vaultURL.path) {
                 try FileManager.default.removeItem(at: vaultURL)
@@ -193,12 +171,10 @@ final class VaultStore: ObservableObject {
     }
 
     func registerUser(
-        adminPassword: String,
         username: String,
         password: String,
         confirmation: String,
-        enableTouchID: Bool = false,
-        role: AccountRole = .standard
+        enableTouchID: Bool = false
     ) {
         let normalizedUsername: String
         do {
@@ -212,15 +188,27 @@ final class VaultStore: ObservableObject {
             return
         }
         do {
-            var file = try readVaultFile()
-            try validateAdminPassword(adminPassword, against: file)
+            var file: VaultFile
+            if FileManager.default.fileExists(atPath: vaultURL.path) {
+                file = try readVaultFile()
+            } else {
+                let compatibility = try Self.placeholderAdminFields()
+                file = VaultFile(
+                    version: Self.vaultVersion,
+                    rounds: CryptoService.defaultRounds,
+                    adminSalt: compatibility.salt,
+                    adminVerifier: compatibility.verifier,
+                    users: [],
+                    updatedAt: .now
+                )
+            }
             guard try findUser(username: normalizedUsername, in: file) == nil else {
                 throw VaultError.usernameTaken
             }
             let rawKey = try CryptoService.randomData(count: 32)
             let emptyNotes = try CryptoService.seal(try JSONEncoder().encode(VaultPayload(notes: [], vaultItems: [])), using: SymmetricKey(data: rawKey))
             var built = try makeUser(username: normalizedUsername, displayName: Self.displayName(for: username), password: password, existingVaultKey: rawKey, existingEncryptedNotes: emptyNotes)
-            built.user.role = file.users.isEmpty ? .admin : role
+            built.user.role = .standard
             var touchIDWarning: String?
             if enableTouchID {
                 do {
@@ -280,29 +268,34 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    func changeAdminPassword(currentPassword: String, newPassword: String, confirmation: String) {
+    func changeCurrentUserPassword(currentPassword: String, newPassword: String, confirmation: String) {
         guard newPassword == confirmation else {
-            errorMessage = "两次输入的新管理员密码不一致"
+            errorMessage = "两次输入的新密码不一致"
             return
         }
         do {
             var file = try readVaultFile()
-            try validateAdminPassword(currentPassword, against: file)
-            let adminSalt = try CryptoService.randomData(count: 16)
-            let adminKey = try CryptoService.deriveKey(password: newPassword, salt: adminSalt, rounds: file.rounds)
-            file = VaultFile(
-                version: file.version,
-                rounds: file.rounds,
-                adminSalt: adminSalt,
-                adminVerifier: Self.adminVerifier(for: adminKey),
-                users: file.users,
-                updatedAt: .now
-            )
+            guard let currentUserID,
+                  let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
+                throw VaultError.invalidUsername
+            }
+            let user = file.users[index]
+            let oldPasswordKey = try CryptoService.deriveKey(password: currentPassword, salt: user.passwordSalt, rounds: file.rounds)
+            let rawKey = try CryptoService.open(user.wrappedVaultKey, using: oldPasswordKey)
+            _ = try decodePayload(from: user.encryptedNotes, rawKey: rawKey)
+
+            let newSalt = try CryptoService.randomData(count: 16)
+            let newPasswordKey = try CryptoService.deriveKey(password: newPassword, salt: newSalt, rounds: file.rounds)
+            file.users[index].passwordSalt = newSalt
+            file.users[index].wrappedVaultKey = try CryptoService.seal(rawKey, using: newPasswordKey)
+            file.users[index].updatedAt = .now
+            file.updatedAt = .now
             try write(file)
             vaultFile = file
-            errorMessage = "管理员密码已更新"
+            refreshAccounts(from: file)
+            errorMessage = "当前账户密码已更新"
         } catch {
-            errorMessage = (error as? VaultError)?.localizedDescription ?? "管理员密码更新失败"
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码更新失败"
         }
     }
 
@@ -384,10 +377,8 @@ final class VaultStore: ObservableObject {
         isTouchIDEnabled(userID: currentUserID)
     }
 
-    var currentAccountRole: AccountRole {
-        guard let currentUserID else { return .standard }
-        if let user = vaultFile?.users.first(where: { $0.id == currentUserID }) { return user.role }
-        return accounts.first(where: { $0.id == currentUserID })?.role ?? .standard
+    var currentAccountID: UUID? {
+        currentUserID
     }
 
     var vaultStoragePath: String {
@@ -838,16 +829,20 @@ final class VaultStore: ObservableObject {
         touchActivity()
     }
 
-    func deleteUser(userID: UUID, adminPassword: String) {
+    func deleteCurrentUser(password: String, confirmationText: String) {
+        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "删除我的账户" else {
+            errorMessage = "请输入“删除我的账户”以确认"
+            return
+        }
+        guard let currentUserID else { return }
         do {
             var file = try readVaultFile()
-            try validateAdminPassword(adminPassword, against: file)
-            guard let index = file.users.firstIndex(where: { $0.id == userID }) else {
+            try validateCurrentUserPassword(password, against: file)
+            guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
                 throw VaultError.invalidUsername
             }
-            let deletingCurrentUser = currentUserID == userID
-            keychain.deleteVaultKey(for: userID)
-            try? FileManager.default.removeItem(at: attachmentDirectory(for: userID))
+            keychain.deleteVaultKey(for: currentUserID)
+            try? FileManager.default.removeItem(at: attachmentDirectory(for: currentUserID))
             file.users.remove(at: index)
             file.updatedAt = .now
             try write(file)
@@ -855,20 +850,18 @@ final class VaultStore: ObservableObject {
             userCount = file.users.count
             vaultFile = file
 
-            if deletingCurrentUser {
-                notes.removeAll(keepingCapacity: false)
-                vaultItems.removeAll(keepingCapacity: false)
-                imagePreviewCache.removeAll(keepingCapacity: false)
-                let keyByteCount = vaultKey?.count ?? 0
-                vaultKey?.resetBytes(in: 0..<keyByteCount)
-                vaultKey = nil
-                currentUserID = nil
-                signedInUsername = nil
-                state = .locked
-            }
-            errorMessage = "用户已删除，相关加密数据已销毁"
+            notes.removeAll(keepingCapacity: false)
+            vaultItems.removeAll(keepingCapacity: false)
+            imagePreviewCache.removeAll(keepingCapacity: false)
+            let keyByteCount = vaultKey?.count ?? 0
+            vaultKey?.resetBytes(in: 0..<keyByteCount)
+            vaultKey = nil
+            self.currentUserID = nil
+            signedInUsername = nil
+            state = file.users.isEmpty ? .needsAdminSetup : .locked
+            errorMessage = "当前账户已删除，相关加密数据已销毁"
         } catch {
-            errorMessage = (error as? VaultError)?.localizedDescription ?? "删除用户失败"
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "删除账户失败"
         }
     }
 
@@ -1209,11 +1202,13 @@ final class VaultStore: ObservableObject {
         return String(code.uppercased().filter { allowed.contains($0) })
     }
 
-    private func validateAdminPassword(_ password: String, against file: VaultFile) throws {
-        let key = try CryptoService.deriveKey(password: password, salt: file.adminSalt, rounds: file.rounds)
-        guard Self.adminVerifier(for: key) == file.adminVerifier else {
-            throw VaultError.adminPasswordInvalid
+    private func validateCurrentUserPassword(_ password: String, against file: VaultFile) throws {
+        guard let currentUserID,
+              let user = file.users.first(where: { $0.id == currentUserID }) else {
+            throw VaultError.invalidUsername
         }
+        let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
+        _ = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
     }
 
     private static func adminVerifier(for key: SymmetricKey) -> Data {
@@ -1310,15 +1305,11 @@ final class VaultStore: ObservableObject {
         guard ProcessInfo.processInfo.environment["CIPHERNOTES_DEMO_DATA"] == "1",
               state == .needsAdminSetup else { return }
 
-        let adminPassword = "demo-admin"
         let userPassword = "demo-password"
-        createAdminPassword(password: adminPassword, confirmation: adminPassword)
         registerUser(
-            adminPassword: adminPassword,
             username: "演示账户",
             password: userPassword,
-            confirmation: userPassword,
-            role: .admin
+            confirmation: userPassword
         )
         dismissRecoveryCode()
 
@@ -1329,7 +1320,7 @@ final class VaultStore: ObservableObject {
             body: """
             - 所有笔记在本机加密保存
             - 保险柜文件使用分片加密
-            - 管理员不能直接查看普通用户内容
+            - 其他账户不能查看当前账户内容
 
             今日重点：整理备份、检查恢复码、把重要照片移入保险柜。
             """
@@ -1368,7 +1359,7 @@ final class VaultStore: ObservableObject {
         guard FileManager.default.fileExists(atPath: url.path) else { return .needsAdminSetup }
         guard let data = try? Data(contentsOf: url) else { return .locked }
         if let file = try? JSONDecoder().decode(VaultFile.self, from: data), file.version == vaultVersion {
-            return .locked
+            return file.users.isEmpty ? .needsAdminSetup : .locked
         }
         if let legacy = try? JSONDecoder().decode(LegacyVaultFile.self, from: data), legacy.version == 1 {
             return .needsMigration
@@ -1450,6 +1441,18 @@ final class VaultStore: ObservableObject {
     }
 
     func restoreVault(from backupURL: URL) {
+        restoreVault(from: backupURL, currentPassword: "", confirmationText: "还原保险库", skipPasswordCheck: true)
+    }
+
+    func restoreVault(from backupURL: URL, currentPassword: String, confirmationText: String) {
+        restoreVault(from: backupURL, currentPassword: currentPassword, confirmationText: confirmationText, skipPasswordCheck: false)
+    }
+
+    private func restoreVault(from backupURL: URL, currentPassword: String, confirmationText: String, skipPasswordCheck: Bool) {
+        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "还原保险库" else {
+            errorMessage = "请输入“还原保险库”以确认"
+            return
+        }
         let accessing = backupURL.startAccessingSecurityScopedResource()
         defer { if accessing { backupURL.stopAccessingSecurityScopedResource() } }
         let backupVaultURL = backupURL.appendingPathComponent("vault.json")
@@ -1461,6 +1464,14 @@ final class VaultStore: ObservableObject {
               (try? JSONDecoder().decode(VaultFile.self, from: data)) != nil else {
             errorMessage = "备份文件无效或已损坏"
             return
+        }
+        if !skipPasswordCheck {
+            do {
+                try validateCurrentUserPassword(currentPassword, against: try readVaultFile())
+            } catch {
+                errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码不正确"
+                return
+            }
         }
         if state == .unlocked { lock() }
         do {

@@ -110,15 +110,15 @@ enum AccountRole: String, Codable, CaseIterable, Identifiable, Equatable, Sendab
 
     var label: String {
         switch self {
-        case .admin: "管理员账号"
-        case .standard: "普通账号"
+        case .admin: "本地账户"
+        case .standard: "本地账户"
         }
     }
 
     var shortLabel: String {
         switch self {
-        case .admin: "管理员"
-        case .standard: "普通"
+        case .admin: "本地"
+        case .standard: "本地"
         }
     }
 }
@@ -292,7 +292,6 @@ enum VaultError: LocalizedError {
     case passwordRequired
     case usernameInvalid
     case usernameTaken
-    case adminPasswordInvalid
     case recoveryCodeMissing
     case biometricsUnavailable
     case touchIDNotConfigured
@@ -306,7 +305,6 @@ enum VaultError: LocalizedError {
         case .passwordRequired: "需要填写这个字段"
         case .usernameInvalid: "用户名不可用"
         case .usernameTaken: "这个用户名已经注册"
-        case .adminPasswordInvalid: "管理员密码不正确"
         case .recoveryCodeMissing: "这个用户还没有恢复码，请先登录后生成恢复码"
         case .biometricsUnavailable: "这台 Mac 暂时无法使用 Touch ID"
         case .touchIDNotConfigured: "这个账户还没有启用 Touch ID"
