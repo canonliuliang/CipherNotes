@@ -24,4 +24,4 @@ CipherNotes 1.0.3 focuses on product polish and publishing clarity. The website 
 
 ## Publishing Reminder
 
-After pushing `main`, push tag `v1.0.3`. The GitHub `Release` workflow will build the app, create or update the Release, and upload the generated files from `outputs`.
+After pushing `main`, either push tag `v1.0.3` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.

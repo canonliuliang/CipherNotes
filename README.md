@@ -122,6 +122,8 @@ git tag v1.0.3
 git push origin v1.0.3
 ```
 
+If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
+
 The `Release` workflow validates the version, runs the package script, creates or updates the GitHub Release, and uploads the generated `pkg`, `zip`, release notes, usage guide, website output, and icon.
 
 ## Upgrade From Older Vaults
