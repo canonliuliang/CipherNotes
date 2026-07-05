@@ -13,6 +13,7 @@ final class VaultStore: ObservableObject {
     @Published private(set) var userCount = 0
     @Published private(set) var accounts: [AccountSummary] = []
     @Published private(set) var securityLogs: [SecurityLogEntry] = []
+    @Published private(set) var isDecoySession = false
     @Published var recoveryCodeToShow: String?
     @Published var errorMessage: String?
     @Published var autoLockMinutes = 5
@@ -20,6 +21,7 @@ final class VaultStore: ObservableObject {
     nonisolated private static let vaultVersion = 2
     nonisolated private static let sharedNoteVersion = 1
     nonisolated private static let maxSecurityLogEntries = 500
+    nonisolated private static let decoyVerifierContext = Data("ciphernotes-decoy-password-v1".utf8)
 
     private let vaultURL: URL
     private let keychain: KeychainService
@@ -127,6 +129,7 @@ final class VaultStore: ObservableObject {
             notes.removeAll(keepingCapacity: false)
             vaultItems.removeAll(keepingCapacity: false)
             securityLogs.removeAll(keepingCapacity: false)
+            isDecoySession = false
             imagePreviewCache.removeAll(keepingCapacity: false)
             signedInUsername = nil
             userCount = 0
@@ -161,6 +164,7 @@ final class VaultStore: ObservableObject {
             notes.removeAll(keepingCapacity: false)
             vaultItems.removeAll(keepingCapacity: false)
             securityLogs.removeAll(keepingCapacity: false)
+            isDecoySession = false
             imagePreviewCache.removeAll(keepingCapacity: false)
             signedInUsername = nil
             userCount = 0
@@ -320,6 +324,7 @@ final class VaultStore: ObservableObject {
             recordSecurityEvent(.loginSucceeded, message: "账户已用密码登录")
             return true
         } catch {
+            if unlockWithDecoyPassword(username: username, password: password) { return true }
             errorMessage = (error as? VaultError)?.localizedDescription ?? "无法登录"
             return false
         }
@@ -338,6 +343,7 @@ final class VaultStore: ObservableObject {
             recordSecurityEvent(.loginSucceeded, message: "账户已用密码登录")
             return true
         } catch {
+            if unlockWithDecoyPassword(userID: userID, password: password) { return true }
             errorMessage = (error as? VaultError)?.localizedDescription ?? "无法登录"
             return false
         }
@@ -416,6 +422,90 @@ final class VaultStore: ObservableObject {
     func setAdvancedDataProtectionForCurrentAccount(_ enabled: Bool) {
         guard let currentUserID else { return }
         setAdvancedDataProtectionEnabled(enabled, for: currentUserID)
+    }
+
+    var currentAccountDecoyPasswordEnabled: Bool {
+        guard let currentUserID else { return false }
+        if let user = vaultFile?.users.first(where: { $0.id == currentUserID }) {
+            return user.decoyPasswordSalt != nil && user.decoyPasswordVerifier != nil
+        }
+        return false
+    }
+
+    var currentAccountDecoyPasswordAction: DecoyPasswordAction {
+        guard let currentUserID,
+              let user = vaultFile?.users.first(where: { $0.id == currentUserID }) else {
+            return .openDecoySpace
+        }
+        return user.decoyPasswordAction
+    }
+
+    func setDecoyPasswordForCurrentAccount(currentPassword: String, decoyPassword: String, confirmation: String, action: DecoyPasswordAction) {
+        guard decoyPassword == confirmation else {
+            errorMessage = "两次输入的虚假密码不一致"
+            return
+        }
+        guard !decoyPassword.isEmpty else {
+            errorMessage = "虚假密码不能为空"
+            return
+        }
+        do {
+            var file = try readVaultFile()
+            try validateCurrentUserPassword(currentPassword, against: file)
+            guard let currentUserID,
+                  let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
+                throw VaultError.invalidUsername
+            }
+            let user = file.users[index]
+            let realKey = try CryptoService.deriveKey(password: decoyPassword, salt: user.passwordSalt, rounds: file.rounds)
+            if (try? CryptoService.open(user.wrappedVaultKey, using: realKey)) != nil {
+                errorMessage = "虚假密码不能和真实密码相同"
+                return
+            }
+            let salt = try CryptoService.randomData(count: 16)
+            let verifier = try Self.decoyVerifier(password: decoyPassword, salt: salt, rounds: file.rounds)
+            file.users[index].decoyPasswordSalt = salt
+            file.users[index].decoyPasswordVerifier = verifier
+            file.users[index].decoyPasswordAction = action
+            file.users[index].advancedDataProtectionEnabled = true
+            file.users[index].updatedAt = .now
+            file.updatedAt = .now
+            try write(file)
+            vaultFile = file
+            refreshAccounts(from: file)
+            autoLockMinutes = 1
+            recordSecurityEvent(.decoyPasswordConfigured, message: action == .openDecoySpace ? "虚假密码已设置为进入虚假空间" : "虚假密码已设置为销毁本地数据")
+            errorMessage = "虚假密码已设置"
+        } catch {
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "设置虚假密码失败"
+        }
+    }
+
+    func disableDecoyPasswordForCurrentAccount(currentPassword: String, confirmationText: String) {
+        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "关闭虚假密码" else {
+            errorMessage = "请输入“关闭虚假密码”以确认"
+            return
+        }
+        do {
+            var file = try readVaultFile()
+            try validateCurrentUserPassword(currentPassword, against: file)
+            guard let currentUserID,
+                  let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
+                throw VaultError.invalidUsername
+            }
+            file.users[index].decoyPasswordSalt = nil
+            file.users[index].decoyPasswordVerifier = nil
+            file.users[index].decoyPasswordAction = .openDecoySpace
+            file.users[index].updatedAt = .now
+            file.updatedAt = .now
+            try write(file)
+            vaultFile = file
+            refreshAccounts(from: file)
+            recordSecurityEvent(.decoyPasswordDisabled, message: "虚假密码已关闭")
+            errorMessage = "虚假密码已关闭"
+        } catch {
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "关闭虚假密码失败"
+        }
     }
 
     func enableTouchID() {
@@ -641,6 +731,7 @@ final class VaultStore: ObservableObject {
         vaultFile = nil
         currentUserID = nil
         signedInUsername = nil
+        isDecoySession = false
         state = .locked
         errorMessage = nil
     }
@@ -1210,6 +1301,7 @@ final class VaultStore: ObservableObject {
         vaultKey = rawKey
         currentUserID = user.id
         signedInUsername = username
+        isDecoySession = false
         refreshAccounts(from: file)
         if user.advancedDataProtectionEnabled {
             autoLockMinutes = min(autoLockMinutes, 1)
@@ -1217,6 +1309,91 @@ final class VaultStore: ObservableObject {
         state = .unlocked
         errorMessage = nil
         touchActivity()
+    }
+
+    private func finishDecoyUnlock(file: VaultFile, user: UserRecord) {
+        imagePreviewCache.removeAll(keepingCapacity: false)
+        notes = []
+        vaultItems = []
+        securityLogs = []
+        vaultFile = file
+        vaultKey = nil
+        currentUserID = user.id
+        signedInUsername = user.displayName ?? "本地账户"
+        isDecoySession = true
+        autoLockMinutes = 1
+        refreshAccounts(from: file)
+        state = .unlocked
+        errorMessage = nil
+        touchActivity()
+    }
+
+    private func unlockWithDecoyPassword(username: String, password: String) -> Bool {
+        do {
+            let file = try readVaultFile()
+            guard let user = try findUser(username: username, in: file) else { return false }
+            return handleDecoyPassword(password, user: user, file: file)
+        } catch {
+            return false
+        }
+    }
+
+    private func unlockWithDecoyPassword(userID: UUID, password: String) -> Bool {
+        do {
+            let file = try readVaultFile()
+            guard let user = file.users.first(where: { $0.id == userID }) else { return false }
+            return handleDecoyPassword(password, user: user, file: file)
+        } catch {
+            return false
+        }
+    }
+
+    private func handleDecoyPassword(_ password: String, user: UserRecord, file: VaultFile) -> Bool {
+        guard isDecoyPassword(password, for: user, rounds: file.rounds) else { return false }
+        switch user.decoyPasswordAction {
+        case .openDecoySpace:
+            finishDecoyUnlock(file: file, user: user)
+        case .eraseLocalData:
+            destroyLocalVaultAfterDecoyPassword()
+        }
+        return true
+    }
+
+    private func isDecoyPassword(_ password: String, for user: UserRecord, rounds: UInt32) -> Bool {
+        guard let salt = user.decoyPasswordSalt,
+              let verifier = user.decoyPasswordVerifier,
+              let candidate = try? Self.decoyVerifier(password: password, salt: salt, rounds: rounds) else {
+            return false
+        }
+        return candidate == verifier
+    }
+
+    private func destroyLocalVaultAfterDecoyPassword() {
+        keychain.deleteAllVaultKeys()
+        try? FileManager.default.removeItem(at: vaultURL)
+        try? FileManager.default.removeItem(at: attachmentsRootURL())
+        vaultFile = nil
+        vaultKey = nil
+        currentUserID = nil
+        notes.removeAll(keepingCapacity: false)
+        vaultItems.removeAll(keepingCapacity: false)
+        securityLogs.removeAll(keepingCapacity: false)
+        imagePreviewCache.removeAll(keepingCapacity: false)
+        signedInUsername = nil
+        userCount = 0
+        accounts = []
+        recoveryCodeToShow = nil
+        isDecoySession = false
+        autoLockMinutes = 5
+        state = .needsAdminSetup
+        errorMessage = nil
+    }
+
+    nonisolated private static func decoyVerifier(password: String, salt: Data, rounds: UInt32) throws -> Data {
+        let key = try CryptoService.deriveKey(password: password, salt: salt, rounds: rounds)
+        var input = key.withUnsafeBytes { Data($0) }
+        input.append(decoyVerifierContext)
+        return Data(SHA256.hash(data: input))
     }
 
     private func decodeNotes(from encryptedNotes: Data, rawKey: Data) throws -> [Note] {
@@ -1315,6 +1492,7 @@ final class VaultStore: ObservableObject {
 
     private func persist() {
         guard var file = vaultFile, let vaultKey, let currentUserID else { return }
+        guard !isDecoySession else { return }
         do {
             guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else { throw VaultError.corruptVault }
             let payload = VaultPayload(notes: notes.map { note in
@@ -1488,6 +1666,7 @@ final class VaultStore: ObservableObject {
                 displayName: user.displayName?.isEmpty == false ? user.displayName! : "旧账户 \(index + 1)",
                 touchIDEnabled: user.touchIDEnabled,
                 advancedDataProtectionEnabled: user.advancedDataProtectionEnabled,
+                decoyPasswordEnabled: user.decoyPasswordSalt != nil && user.decoyPasswordVerifier != nil,
                 role: user.role
             )
         }

@@ -713,4 +713,66 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.securityLogs.first?.eventType, .securityLogsCleared)
         }
     }
+
+    func testDecoyPasswordOpensNonPersistentDecoySpace() async throws {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
+            let noteID = store.addNote()
+            store.updateNote(id: noteID, title: "Real", body: "Real secret")
+            store.setDecoyPasswordForCurrentAccount(
+                currentPassword: "real-pass",
+                decoyPassword: "fake-pass",
+                confirmation: "fake-pass",
+                action: .openDecoySpace
+            )
+            XCTAssertTrue(store.currentAccountDecoyPasswordEnabled)
+            store.lock()
+
+            XCTAssertTrue(store.unlock(username: "owner", password: "fake-pass"))
+            XCTAssertTrue(store.isDecoySession)
+            XCTAssertTrue(store.notes.isEmpty)
+            let fakeID = store.addNote()
+            store.updateNote(id: fakeID, title: "Fake", body: "Fake content")
+            XCTAssertEqual(store.notes.first?.title, "Fake")
+            store.lock()
+
+            XCTAssertTrue(store.unlock(username: "owner", password: "real-pass"))
+            XCTAssertFalse(store.isDecoySession)
+            XCTAssertEqual(store.notes.count, 1)
+            XCTAssertEqual(store.notes.first?.title, "Real")
+            XCTAssertEqual(store.notes.first?.body, "Real secret")
+        }
+    }
+
+    func testDecoyPasswordCanEraseLocalVaultWhenConfigured() async throws {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
+            let noteID = store.addNote()
+            store.updateNote(id: noteID, title: "Real", body: "Destroy me")
+            store.setDecoyPasswordForCurrentAccount(
+                currentPassword: "real-pass",
+                decoyPassword: "wipe-pass",
+                confirmation: "wipe-pass",
+                action: .eraseLocalData
+            )
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            store.lock()
+
+            XCTAssertTrue(store.unlock(username: "owner", password: "wipe-pass"))
+            XCTAssertEqual(store.state, .needsAdminSetup)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+            XCTAssertTrue(store.accounts.isEmpty)
+            XCTAssertTrue(store.notes.isEmpty)
+        }
+    }
 }

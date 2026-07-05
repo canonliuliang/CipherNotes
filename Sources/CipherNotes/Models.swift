@@ -119,7 +119,22 @@ struct AccountSummary: Identifiable, Codable, Equatable, Hashable, Sendable {
     let displayName: String
     var touchIDEnabled: Bool = false
     var advancedDataProtectionEnabled: Bool = false
+    var decoyPasswordEnabled: Bool = false
     var role: AccountRole = .standard
+}
+
+enum DecoyPasswordAction: String, CaseIterable, Identifiable, Codable, Sendable {
+    case openDecoySpace
+    case eraseLocalData
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .openDecoySpace: "进入虚假空间"
+        case .eraseLocalData: "直接销毁本地数据"
+        }
+    }
 }
 
 enum SecurityLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -188,6 +203,9 @@ enum SecurityLogEventType: String, Codable, Sendable {
     case dataErased
     case securityLogsCleared
     case protectedActionBlocked
+    case decoyPasswordConfigured
+    case decoyPasswordDisabled
+    case decoyPasswordUsed
 
     var label: String {
         switch self {
@@ -216,6 +234,9 @@ enum SecurityLogEventType: String, Codable, Sendable {
         case .dataErased: "清空数据"
         case .securityLogsCleared: "清空安全日志"
         case .protectedActionBlocked: "保护拦截"
+        case .decoyPasswordConfigured: "设置虚假密码"
+        case .decoyPasswordDisabled: "关闭虚假密码"
+        case .decoyPasswordUsed: "使用虚假密码"
         }
     }
 
@@ -227,7 +248,7 @@ enum SecurityLogEventType: String, Codable, Sendable {
             return .account
         case .touchIDEnabled, .touchIDDisabled, .touchIDFailed, .touchIDDowngraded:
             return .touchID
-        case .advancedProtectionEnabled, .advancedProtectionDisabled, .protectedActionBlocked:
+        case .advancedProtectionEnabled, .advancedProtectionDisabled, .protectedActionBlocked, .decoyPasswordConfigured, .decoyPasswordDisabled, .decoyPasswordUsed:
             return .advancedProtection
         case .noteExported, .sharedNoteExported, .sharedNoteImported, .backupCreated, .backupRestored:
             return .transfer
@@ -336,6 +357,9 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
     var displayName: String? = nil
     var touchIDEnabled: Bool = false
     var advancedDataProtectionEnabled: Bool = false
+    var decoyPasswordSalt: Data? = nil
+    var decoyPasswordVerifier: Data? = nil
+    var decoyPasswordAction: DecoyPasswordAction = .openDecoySpace
     var role: AccountRole = .standard
     var usernameSalt: Data? = nil
     var usernameHash: Data? = nil
@@ -352,6 +376,9 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         case displayName
         case touchIDEnabled
         case advancedDataProtectionEnabled
+        case decoyPasswordSalt
+        case decoyPasswordVerifier
+        case decoyPasswordAction
         case role
         case usernameSalt
         case usernameHash
@@ -369,6 +396,9 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         displayName: String? = nil,
         touchIDEnabled: Bool = false,
         advancedDataProtectionEnabled: Bool = false,
+        decoyPasswordSalt: Data? = nil,
+        decoyPasswordVerifier: Data? = nil,
+        decoyPasswordAction: DecoyPasswordAction = .openDecoySpace,
         role: AccountRole = .standard,
         usernameSalt: Data? = nil,
         usernameHash: Data? = nil,
@@ -384,6 +414,9 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         self.displayName = displayName
         self.touchIDEnabled = touchIDEnabled
         self.advancedDataProtectionEnabled = advancedDataProtectionEnabled
+        self.decoyPasswordSalt = decoyPasswordSalt
+        self.decoyPasswordVerifier = decoyPasswordVerifier
+        self.decoyPasswordAction = decoyPasswordAction
         self.role = role
         self.usernameSalt = usernameSalt
         self.usernameHash = usernameHash
@@ -402,6 +435,9 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         touchIDEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchIDEnabled) ?? false
         advancedDataProtectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .advancedDataProtectionEnabled) ?? false
+        decoyPasswordSalt = try container.decodeIfPresent(Data.self, forKey: .decoyPasswordSalt)
+        decoyPasswordVerifier = try container.decodeIfPresent(Data.self, forKey: .decoyPasswordVerifier)
+        decoyPasswordAction = try container.decodeIfPresent(DecoyPasswordAction.self, forKey: .decoyPasswordAction) ?? .openDecoySpace
         role = try container.decodeIfPresent(AccountRole.self, forKey: .role) ?? .standard
         usernameSalt = try container.decodeIfPresent(Data.self, forKey: .usernameSalt)
         usernameHash = try container.decodeIfPresent(Data.self, forKey: .usernameHash)

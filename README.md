@@ -30,6 +30,7 @@ Requires macOS 14 or later.
 - Recovery codes for account password reset.
 - Local encrypted security log for sensitive events.
 - Advanced Data Protection mode that tightens auto-lock and blocks copying, exporting, sharing, previews, and sensitive filename exposure.
+- Decoy password option for Advanced Data Protection: open a temporary fake space or erase local data when the configured decoy password is entered.
 - Local backup and restore.
 - Free: no membership, purchase flow, restore purchase, or paid switch.
 
@@ -121,6 +122,7 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 - Removed external password-manager helper prompts.
 - Added local encrypted security logs in Security Center.
 - Added Advanced Data Protection blocking for copy, export, sharing, vault preview, vault export, and sensitive filename copying.
+- Added Advanced Data Protection decoy password actions for fake-space entry or local data destruction.
 - Added stricter Touch ID fallback messaging without raw keychain error codes.
 - Added chunked encrypted vault storage for large files.
 - Added backup and restore authorization with current account password and fixed confirmation text.
