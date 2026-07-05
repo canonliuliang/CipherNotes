@@ -1,91 +1,104 @@
-# 密笺 CipherNotes
+# CipherNotes / 密笺
 
-本地优先的 macOS 加密记事本与文件保险柜。笔记、照片、PDF、压缩包和大文件都保存在这台 Mac 上；没有云端账户、广告、分析、会员或付费开关。
+A privacy-first, fully local encrypted notes app for macOS.
 
-[产品官网](https://canonliuliang.github.io/CipherNotes/) · [下载最新版](https://github.com/canonliuliang/CipherNotes/releases/latest) · [问题反馈](https://github.com/canonliuliang/CipherNotes/issues)
+CipherNotes is built for private notes, photos, documents, archives, and other files you want to keep on your Mac instead of in a cloud account. It has no sync server, no analytics, no ads, no subscription, and no paid feature gate.
+
+[Website](https://canonliuliang.github.io/CipherNotes/) · [Download latest release](https://github.com/canonliuliang/CipherNotes/releases/latest) · [Report an issue](https://github.com/canonliuliang/CipherNotes/issues)
 
 ![CI](https://github.com/canonliuliang/CipherNotes/actions/workflows/ci.yml/badge.svg)
 
-![密笺主界面](docs/media/app-screenshot.png)
+![CipherNotes main window](docs/media/app-screenshot.png)
 
-## 为什么选择 CipherNotes
+## Download
 
-- 不想把私密内容交给云端：密笺没有远程账号、同步服务器、广告分析或会员系统。
-- 不只想加密文字：笔记、照片、PDF、压缩包和大文件都能进入本地加密保险柜。
-- 不想被大文件拖慢：保险柜使用分片加密和后台导入，适合保存照片库、扫描件和离线资料。
-- 不想某个账户变成万能钥匙：所有本地账户平等，账户只能管理自己的内容。
-- 不想被订阅锁功能：密笺是纯免费版本，安全中心、恢复码、Touch ID、备份还原和保险柜都不设付费墙。
+Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-## 核心能力
+- `密笺安装器.pkg`: recommended installer.
+- `密笺-macOS.zip`: portable archive.
 
-- 本地加密笔记：标题和正文使用 AES-256-GCM 加密后写入磁盘。
-- 文件保险柜：照片、PDF、压缩包等文件独立加密保存，不依附于某条笔记。
-- 大文件不卡界面：保险柜文件按 4MB 分片加密，超过 64MB 后台导入，导出时流式解密。
-- 多账号：本机账户彼此可见但权限平等，内容由各自密码和恢复码保护。
-- Touch ID：每个账户可单独启用快捷解锁，密钥保存在 macOS 钥匙串。
-- Apple 密码 App 辅助保存：创建或重设账户后，可复制账号密码并打开 macOS 密码 App 手动保存。
-- 恢复码：注册、迁移或手动更新时生成，只显示一次，用于重设用户密码并保留笔记。
-- 本地备份与还原：不依赖云端账户。
-- 纯免费：没有会员、购买入口、恢复购买或功能付费墙。
+Requires macOS 14 or later.
 
-## 下载
+## Highlights
 
-前往 [Releases](https://github.com/canonliuliang/CipherNotes/releases/latest) 下载：
+- Fully local encrypted notes and file vault for macOS.
+- AES-256-GCM encryption for note payloads and vault files.
+- Equal local accounts: no administrator account, no universal password, no hidden superuser.
+- File vault for photos, PDFs, archives, scans, and large offline files.
+- Chunked vault storage: large files are encrypted in 4 MB chunks, imported in the background, and exported by streaming.
+- Touch ID convenience unlock per account, with password fallback.
+- Recovery codes for account password reset.
+- Local encrypted security log for sensitive events.
+- Advanced Data Protection mode that tightens auto-lock and blocks copying, exporting, sharing, previews, and sensitive filename exposure.
+- Local backup and restore.
+- Free: no membership, purchase flow, restore purchase, or paid switch.
 
-- `密笺安装器.pkg`：推荐，双击安装。
-- `密笺-macOS.zip`：压缩版，解压后使用。
+## Screenshots And Website
 
-需要 macOS 14 或更高版本。
+- Product website: [canonliuliang.github.io/CipherNotes](https://canonliuliang.github.io/CipherNotes/)
+- Screenshots live in [docs/media](docs/media).
+- Download buttons on the website point to [Releases latest](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-## 隐私与安全边界
+## Privacy Boundary
 
-- 应用不提供云同步，不上传笔记、文件、账号数据或使用记录。
-- 用户密码经 PBKDF2-HMAC-SHA256（310,000 轮及独立随机盐）派生，仅用于包裹该用户自己的随机保险库密钥；用户密码本身从不保存。
-- 新用户可直接创建本地账户；账户之间不能查看或删除彼此的笔记。
-- 账户显示名会保存在本机保险库文件中，便于登录页选择账户；同时保留带独立随机盐的用户名摘要用于校验。
-- 保险柜文件的加密块保存在本机应用数据目录；主保险库文件中不保存明文标题、正文、保险柜文件名、密码或恢复码。
-- 休眠、切换用户或达到闲置时限后，应用会清除内存中的笔记并锁定。
-- 主窗口设置为禁止系统窗口共享。搜索只在解锁后的内存中进行。
+CipherNotes does not upload notes, files, account data, usage events, recovery codes, or passwords. There is no remote account and no cloud recovery.
 
-忘记某个账户的登录密码且没有保存恢复码时，该账户的笔记无法恢复。其他账户不是万能解锁钥匙，这是本地零知识设计的必要结果。
+What is stored locally:
 
-## 本地数据位置
+- Account display names, so the login screen can show local accounts.
+- Salted username hashes for local username matching.
+- Encrypted note payloads.
+- Encrypted vault file chunks.
+- Encrypted local security logs.
 
-默认保险库：
+What is not stored in plaintext:
+
+- Note titles and bodies.
+- Vault file contents.
+- Account passwords.
+- Recovery codes.
+- Shared-note passwords.
+- Sensitive security-log object names such as note titles, file names, or note bodies.
+
+If you forget an account password and lose its recovery code, that account's encrypted content cannot be recovered. Other accounts are not master keys.
+
+## Data Location
+
+Default vault file:
 
 ```text
 ~/Library/Application Support/CipherNotes/vault.json
 ```
 
-保险柜加密文件块：
+Encrypted vault file chunks:
 
 ```text
 ~/Library/Application Support/CipherNotes/Attachments/
 ```
 
-## 开发运行
+## Develop
 
-需要 macOS 14 或更高版本，以及支持 Swift 6 的 Xcode。
+Requires macOS 14 or later and a Swift 6 capable Xcode toolchain.
 
 ```sh
 swift run --scratch-path /tmp/ciphernotes-run CipherNotes
 ```
 
-也可以用 Xcode 打开 `Package.swift`，选择 `CipherNotes` scheme 后运行。
+You can also open `Package.swift` in Xcode and run the `CipherNotes` scheme.
 
-## 测试
+## Test
 
 ```sh
 swift test --scratch-path /tmp/ciphernotes-test
 ```
 
-## 打包
+## Package
 
 ```sh
 Packaging/build-release.sh
 ```
 
-脚本会自动运行测试、构建 release，并更新：
+The script runs tests, builds the release app, and updates:
 
 - `outputs/密笺安装器.pkg`
 - `outputs/密笺-macOS.zip`
@@ -93,66 +106,56 @@ Packaging/build-release.sh
 - `outputs/产品介绍.html`
 - `outputs/密笺图标.png`
 
-为减少 Spotlight 搜索噪音，`outputs` 不保留展开后的 `.app` 包；需要 App 时解压 zip 即可。
+The repository avoids keeping an expanded `.app` bundle in `outputs` to reduce Spotlight and Git noise. Unzip the release archive when you need the app bundle.
 
-## 旧版升级
+## Upgrade From Older Vaults
 
-从旧版升级时，应用会显示“升级旧保险库”：输入旧版用户名和旧版主密码。旧密码会成为该本地账户的登录密码，原有笔记不会丢失。如果忘记旧密码，也可以选择“跳过，清空旧数据并重新开始”。
+Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
-## 版本记录
+## Changelog
 
 ### 1.0.0
 
-- 移除会员、购买、恢复购买和所有付费门槛，改为纯免费版本。
-- 注册页不再出现会员等级；高级数据保护和恢复码重生成变为普通安全功能。
-- 账户与安全改为平等账户模型：账户可见但只能管理自己，危险操作需要当前账户密码与确认文字。
-- 新增 Apple 密码 App 辅助保存入口，账号创建或重设密码后可复制账号密码并打开密码 App。
-- 新增安全中心。
-- 保险柜改为分片加密存储，支持大文件后台导入和流式导出。
-- 优化保险柜大图预览、文件权限访问和发布打包流程。
-- 新增首次创建保险库、Touch ID 解锁、保险柜导入和加密完成时的轻量动效与反馈。
-- 新增一键 release 打包脚本。
-- 重绘现代简约蓝青 Fluent 风格图标。
-- 保留首次简介、应用内更新日志、法律声明、备份还原、保险柜和共享文件等已有功能。
+- Removed membership, purchases, restore purchase, and all paid feature gates.
+- Removed the administrator model. All accounts are equal local accounts.
+- Removed external password-manager helper prompts.
+- Added local encrypted security logs in Security Center.
+- Added Advanced Data Protection blocking for copy, export, sharing, vault preview, vault export, and sensitive filename copying.
+- Added stricter Touch ID fallback messaging without raw keychain error codes.
+- Added chunked encrypted vault storage for large files.
+- Added backup and restore authorization with current account password and fixed confirmation text.
+- Added first-run intro, in-app changelog, legal/privacy disclosure, and release packaging flow.
 
 ### 0.10.0
 
-- 整理多账户与安全能力。
-- 首次打开新增应用简介。
-- 创建账号改为平等本地账户。
-- 各账户只能解锁自己的笔记和保险柜文件。
-- 高级数据保护、恢复码重生成、保险柜、导入导出等能力均作为本地免费功能提供。
+- Converted account setup to local account creation.
+- Added account recovery codes.
+- Added account and safety management.
+- Added local backup and restore.
 
 ### 0.9.x
 
-- 新增高级数据保护账号。
-- 笔记支持置顶、收藏、归档和标签。
-- 新增 Markdown 预览、标签输入、词数、行数和预计阅读时间。
-- 支持导出 Markdown / TXT。
-- 保险柜新增类型筛选、总容量统计和复制文件名。
+- Added Advanced Data Protection account setting.
+- Added pinned, favorite, archived notes, tags, Markdown preview, and note export.
+- Added vault filtering, total size, filename copying, and large-file work.
 
 ### 0.8.x
 
-- 修补旧版 Touch ID 升级体验。
-- 修复钥匙串反复弹窗。
-- 新 Touch ID 使用 `app.ciphernotes.touchid-v2`。
-- 新增克制动效和减少动效设置。
+- Improved Touch ID upgrade behavior.
+- Reduced repeated keychain prompts.
+- Added motion preferences and calmer UI transitions.
 
 ### 0.7.x
 
-- 新增加密文件保险箱，后调整为独立照片/文件保险柜。
-- 照片和文件不再挂在笔记下。
-- 移入保险柜会先加密保存并删除原文件。
-- 锁定后清空保险柜内存列表。
+- Added encrypted file vault.
+- Moved files out of note payloads into independent encrypted vault storage.
+- Added import-then-delete workflow for source files.
 
 ### 0.3.0 - 0.6.x
 
-- 改为“多用户注册/登录”模型。
-- 增加恢复码、法律与隐私声明、加密共享文件导入/导出。
-- 重新加入 Touch ID 登录和应用内更新日志。
-- 增加账户与安全管理功能。
-- 新增外观选择、笔记排序、复制内容、复制为新笔记、编辑器统计、延迟保存和菜单栏完善。
+- Added multi-account login.
+- Added recovery codes, legal/privacy disclosure, encrypted shared-note import/export, Touch ID, changelog, appearance settings, sorting, duplication, editor stats, and autosave improvements.
 
-## 许可证
+## License
 
-本项目使用 MIT License。详见 [LICENSE](LICENSE)。
+MIT License. See [LICENSE](LICENSE).

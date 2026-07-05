@@ -36,33 +36,6 @@ private func requestDangerAuthorization(title: String, message: String, confirma
     return (passwordField.stringValue, confirmationField.stringValue)
 }
 
-@MainActor
-private func copyCredentialAndOpenPasswordsApp(_ credential: PasswordAppCredential) -> Bool {
-    let clipboardText = """
-    服务：\(credential.serviceName)
-    用户名：\(credential.username)
-    密码：\(credential.password)
-    """
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(clipboardText, forType: .string)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 120) {
-        if NSPasteboard.general.string(forType: .string) == clipboardText {
-            NSPasteboard.general.clearContents()
-        }
-    }
-
-    let passwordsURL = URL(fileURLWithPath: "/System/Applications/Passwords.app")
-    if FileManager.default.fileExists(atPath: passwordsURL.path) {
-        NSWorkspace.shared.openApplication(at: passwordsURL, configuration: NSWorkspace.OpenConfiguration())
-        return true
-    }
-    if let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
-        NSWorkspace.shared.open(settingsURL)
-        return true
-    }
-    return false
-}
-
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
     case light
@@ -1141,6 +1114,7 @@ struct NotesView: View {
             Text("15 分钟").tag(15)
             Text("30 分钟").tag(30)
         }
+        .disabled(store.currentAccountAdvancedDataProtectionEnabled)
         Divider()
         Picker("笔记排序", selection: $noteSortRawValue) {
             ForEach(NoteSort.allCases) { sort in
@@ -1161,17 +1135,18 @@ struct NotesView: View {
             .disabled(selectedNote == nil)
         Divider()
         Button("复制所选笔记内容") { copySelectedNote() }
-            .disabled(selectedNote == nil)
+            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
         Button("复制所选笔记为新笔记") { duplicateSelectedNote() }
             .disabled(selectedNote == nil)
         Divider()
         Button("导出所选笔记为 Markdown…") { exportSelectedPlainNote(fileExtension: "md") }
-            .disabled(selectedNote == nil)
+            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
         Button("导出所选笔记为 TXT…") { exportSelectedPlainNote(fileExtension: "txt") }
-            .disabled(selectedNote == nil)
+            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
         Button("导出所选笔记为共享文件") { showingExportShare = true }
-            .disabled(selectedNote == nil)
+            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
         Button("导入共享文件") { chooseSharedFile() }
+            .disabled(store.currentAccountAdvancedDataProtectionEnabled)
         Divider()
         if store.biometricsAvailable {
             Button("为当前账户启用 Touch ID") { store.enableTouchID() }
@@ -1251,14 +1226,17 @@ struct NotesView: View {
     }
 
     private func copyNote(_ note: Note) {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，复制笔记内容已阻止") { return }
         let title = note.title.isEmpty ? "无标题" : note.title
         let text = note.body.isEmpty ? title : "\(title)\n\n\(note.body)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         store.errorMessage = "笔记内容已复制到剪贴板"
+        store.recordSecurityEvent(.noteCopied, message: "已复制 1 条笔记内容")
     }
 
     private func showShareExportForSelectedNote() {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，共享导出已阻止") { return }
         guard selectedNote != nil else { return }
         showingExportShare = true
     }
@@ -1290,6 +1268,7 @@ struct NotesView: View {
     }
 
     private func exportPlainNote(_ note: Note, fileExtension: String) {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，普通导出已阻止") { return }
         let panel = NSSavePanel()
         let title = note.title.isEmpty ? "无标题" : note.title
         panel.allowedContentTypes = fileExtension == "md" ? [UTType(filenameExtension: "md") ?? .plainText] : [.plainText]
@@ -1308,8 +1287,10 @@ struct NotesView: View {
                 try content.write(to: url, atomically: true, encoding: .utf8)
             }
             store.errorMessage = fileExtension == "md" ? "Markdown 已导出" : "TXT 已导出"
+            store.recordSecurityEvent(.noteExported, message: "已导出 1 条普通笔记")
         } catch {
             store.errorMessage = "导出失败：\(error.localizedDescription)"
+            store.recordSecurityEvent(.noteExported, result: .failure, message: "普通笔记导出失败")
         }
     }
 
@@ -1349,6 +1330,7 @@ struct NotesView: View {
 
 
     private func chooseSharedFile() {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，共享导入已阻止") { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [cipherNoteUTType, .json, .data]
         panel.allowsMultipleSelection = false
@@ -1587,6 +1569,7 @@ struct VaultView: View {
             }
         }
         let items = scoped.sorted { $0.createdAt > $1.createdAt }
+        if store.currentAccountAdvancedDataProtectionEnabled { return items }
         guard !query.isEmpty else { return items }
         return items.filter { $0.fileName.localizedCaseInsensitiveContains(query) }
     }
@@ -1621,6 +1604,15 @@ struct VaultView: View {
 
             TextField("搜索保险柜文件", text: $query)
                 .textFieldStyle(.roundedBorder)
+                .disabled(store.currentAccountAdvancedDataProtectionEnabled)
+                .overlay(alignment: .trailing) {
+                    if store.currentAccountAdvancedDataProtectionEnabled {
+                        Text("高级保护已隐藏文件名搜索")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.trailing, 8)
+                    }
+                }
 
             HStack {
                 Picker("文件类型", selection: $filter) {
@@ -1728,11 +1720,16 @@ struct VaultItemCard: View {
     @State private var preview: NSImage?
 
     var body: some View {
+        let protected = store.currentAccountAdvancedDataProtectionEnabled
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(.quaternary)
-                if let preview {
+                if protected {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 34))
+                        .foregroundStyle(.mint)
+                } else if let preview {
                     Image(nsImage: preview)
                         .resizable()
                         .scaledToFill()
@@ -1745,7 +1742,7 @@ struct VaultItemCard: View {
                 }
             }
             .frame(height: 118)
-            Text(item.fileName)
+            Text(protected ? "受保护文件" : item.fileName)
                 .font(.headline)
                 .lineLimit(2)
             Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))
@@ -1763,7 +1760,11 @@ struct VaultItemCard: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .task(id: item.id) {
-            if isImage { preview = store.previewVaultImage(itemID: item.id) }
+            if isImage && !store.currentAccountAdvancedDataProtectionEnabled {
+                preview = store.previewVaultImage(itemID: item.id)
+            } else {
+                preview = nil
+            }
         }
     }
 
@@ -1778,6 +1779,7 @@ struct VaultItemCard: View {
     }
 
     private func exportItem() {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，保险柜文件导出已阻止") { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = item.fileName
         panel.canCreateDirectories = true
@@ -1786,9 +1788,11 @@ struct VaultItemCard: View {
     }
 
     private func copyFileName() {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，复制保险柜文件名已阻止") { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(item.fileName, forType: .string)
         store.errorMessage = "文件名已复制"
+        store.recordSecurityEvent(.vaultFileNameCopied, message: "已复制 1 个保险柜文件名")
     }
 }
 
@@ -1847,7 +1851,6 @@ struct ShareImportView: View {
 }
 
 struct RecoveryCodeView: View {
-    @EnvironmentObject private var store: VaultStore
     let code: String
     let onDone: () -> Void
 
@@ -1866,27 +1869,6 @@ struct RecoveryCodeView: View {
             Text("重设密码或重新生成恢复码后，旧恢复码会失效。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if let credential = store.passwordAppCredential {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("保存到 Apple 密码 App", systemImage: "keychain.fill")
-                        .font(.headline)
-                    Text("macOS 不允许应用静默写入密码 App。点击后会复制账户信息并打开密码 App，你可以新建一条记录后粘贴保存。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button {
-                        if copyCredentialAndOpenPasswordsApp(credential) {
-                            store.errorMessage = "账户信息已复制，请在密码 App 中新建记录并粘贴保存"
-                        } else {
-                            store.errorMessage = "账户信息已复制，请手动打开密码 App 保存"
-                        }
-                    } label: {
-                        Label("复制账号密码并打开密码 App", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(12)
-                .background(.quaternary.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
             HStack {
                 Spacer()
                 Button("我已保存") { onDone() }
@@ -1932,6 +1914,7 @@ struct LegalDisclosureView: View {
 struct SecurityCenterView: View {
     @EnvironmentObject private var store: VaultStore
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedLogCategory: SecurityLogCategory = .all
 
     private var storeErrorPresented: Binding<Bool> {
         Binding(
@@ -1940,6 +1923,12 @@ struct SecurityCenterView: View {
                 if !isPresented { store.errorMessage = nil }
             }
         )
+    }
+
+    private var filteredSecurityLogs: [SecurityLogEntry] {
+        store.securityLogs.filter { log in
+            selectedLogCategory == .all || log.eventType.category == selectedLogCategory
+        }
     }
 
     var body: some View {
@@ -1993,6 +1982,12 @@ struct SecurityCenterView: View {
                             Text("30 分钟").tag(30)
                         }
                         .pickerStyle(.segmented)
+                        .disabled(store.currentAccountAdvancedDataProtectionEnabled)
+                        if store.currentAccountAdvancedDataProtectionEnabled {
+                            Text("高级数据保护开启时，自动锁定固定为 1 分钟。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .securitySection()
 
@@ -2022,6 +2017,43 @@ struct SecurityCenterView: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                    }
+                    .securitySection()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            sectionTitle("安全日志", systemImage: "list.bullet.rectangle.portrait.fill")
+                            Spacer()
+                            Picker("筛选", selection: $selectedLogCategory) {
+                                ForEach(SecurityLogCategory.allCases) { category in
+                                    Text(category.label).tag(category)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 150)
+                        }
+                        Text("日志随当前账户加密保存，只记录事件、时间和结果，不记录笔记正文、文件内容、密码或恢复码。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if filteredSecurityLogs.isEmpty {
+                            ContentUnavailableView("暂无安全日志", systemImage: "checkmark.shield")
+                                .frame(maxWidth: .infinity, minHeight: 120)
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(filteredSecurityLogs.prefix(80)) { log in
+                                    SecurityLogRow(log: log)
+                                }
+                            }
+                        }
+                        HStack {
+                            Spacer()
+                            Button(role: .destructive) {
+                                clearSecurityLogs()
+                            } label: {
+                                Label("清空安全日志", systemImage: "trash")
+                            }
+                            .disabled(store.securityLogs.isEmpty)
+                        }
                     }
                     .securitySection()
 
@@ -2178,6 +2210,89 @@ struct SecurityCenterView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(store.vaultStoragePath, forType: .string)
         store.errorMessage = "本地数据位置已复制"
+    }
+
+    private func clearSecurityLogs() {
+        let alert = NSAlert()
+        alert.messageText = "清空安全日志？"
+        alert.informativeText = "这只会清空当前账户的本地安全日志，不会删除笔记或保险柜文件。"
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "继续")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let auth = requestDangerAuthorization(
+            title: "确认清空安全日志",
+            message: "请输入当前账户密码，并输入“清空安全日志”继续。",
+            confirmationPrompt: "输入：清空安全日志"
+        ) else { return }
+        store.clearSecurityLogs(currentPassword: auth.password, confirmationText: auth.confirmation)
+    }
+}
+
+struct SecurityLogRow: View {
+    let log: SecurityLogEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: iconName)
+                .foregroundStyle(tint)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(log.eventType.label)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                    Text(log.result.label)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(tint.opacity(0.12), in: Capsule())
+                }
+                Text(log.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Text(log.timestamp.formatted(date: .abbreviated, time: .standard))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var iconName: String {
+        switch log.eventType.category {
+        case .all:
+            "checkmark.shield"
+        case .login:
+            "lock.open.fill"
+        case .account:
+            "person.crop.circle.badge.checkmark"
+        case .touchID:
+            "touchid"
+        case .advancedProtection:
+            "shield.lefthalf.filled"
+        case .transfer:
+            "arrow.up.arrow.down"
+        case .vault:
+            "lock.rectangle.stack.fill"
+        case .danger:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch log.result {
+        case .success:
+            .mint
+        case .failure:
+            .orange
+        case .blocked:
+            .red
+        }
     }
 }
 

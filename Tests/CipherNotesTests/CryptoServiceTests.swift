@@ -651,4 +651,66 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(note.tags, ["工作", "隐私"])
         }
     }
+
+    func testSecurityLogsPersistEncryptedAndAvoidSensitiveContent() async throws {
+        try await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            let sourceURL = directory.appendingPathComponent("secret-contract-name.txt")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("file secret body".utf8).write(to: sourceURL)
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "logger", password: "pass", confirmation: "pass")
+            let noteID = store.addNote()
+            store.updateNote(id: noteID, title: "Hidden title", body: "Hidden body")
+            store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
+            guard let item = store.vaultItems.first else {
+                return XCTFail("应该已经导入保险柜文件")
+            }
+            store.deleteVaultItem(itemID: item.id)
+
+            XCTAssertTrue(store.securityLogs.contains { $0.eventType == .vaultFilesImported })
+            XCTAssertTrue(store.securityLogs.contains { $0.eventType == .vaultFileDeleted })
+            let logText = store.securityLogs.map(\.message).joined(separator: "\n")
+            XCTAssertFalse(logText.contains("secret-contract-name"))
+            XCTAssertFalse(logText.contains("Hidden title"))
+            XCTAssertFalse(logText.contains("Hidden body"))
+
+            let diskText = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+            XCTAssertFalse(diskText.contains("导入保险柜文件"))
+            XCTAssertFalse(diskText.contains("secret-contract-name"))
+
+            store.lock()
+            store.unlock(username: "logger", password: "pass")
+            XCTAssertTrue(store.securityLogs.contains { $0.eventType == .vaultFilesImported })
+        }
+    }
+
+    func testAdvancedProtectionBlocksSensitiveExportsAndClearsLogsWithAuthorization() async throws {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "protected-logger", password: "pass", confirmation: "pass")
+            let noteID = store.addNote()
+            store.updateNote(id: noteID, title: "Do not export", body: "Sensitive")
+            store.setAdvancedDataProtectionForCurrentAccount(true)
+
+            XCTAssertNil(store.exportSharedNote(id: noteID, sharePassword: "share"))
+            XCTAssertNil(store.importSharedNote(data: Data("not a package".utf8), sharePassword: "share"))
+            XCTAssertTrue(store.securityLogs.contains { $0.eventType == .protectedActionBlocked && $0.result == .blocked })
+
+            store.clearSecurityLogs(currentPassword: "wrong", confirmationText: "清空安全日志")
+            XCTAssertTrue(store.securityLogs.contains { $0.eventType == .protectedActionBlocked })
+
+            store.clearSecurityLogs(currentPassword: "pass", confirmationText: "清空安全日志")
+            XCTAssertEqual(store.securityLogs.count, 1)
+            XCTAssertEqual(store.securityLogs.first?.eventType, .securityLogsCleared)
+        }
+    }
 }

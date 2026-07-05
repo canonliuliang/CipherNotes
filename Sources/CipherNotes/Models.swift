@@ -83,6 +83,26 @@ struct Note: Identifiable, Codable, Equatable, Sendable {
 struct VaultPayload: Codable, Equatable, Sendable {
     var notes: [Note]
     var vaultItems: [VaultAttachment]
+    var securityLogs: [SecurityLogEntry]
+
+    init(notes: [Note], vaultItems: [VaultAttachment], securityLogs: [SecurityLogEntry] = []) {
+        self.notes = notes
+        self.vaultItems = vaultItems
+        self.securityLogs = securityLogs
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case notes
+        case vaultItems
+        case securityLogs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try container.decodeIfPresent([Note].self, forKey: .notes) ?? []
+        vaultItems = try container.decodeIfPresent([VaultAttachment].self, forKey: .vaultItems) ?? []
+        securityLogs = try container.decodeIfPresent([SecurityLogEntry].self, forKey: .securityLogs) ?? []
+    }
 }
 
 struct VaultFile: Codable, Sendable {
@@ -102,10 +122,132 @@ struct AccountSummary: Identifiable, Codable, Equatable, Hashable, Sendable {
     var role: AccountRole = .standard
 }
 
-struct PasswordAppCredential: Equatable, Sendable {
-    let serviceName: String
-    let username: String
-    let password: String
+enum SecurityLogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
+    case all
+    case login
+    case account
+    case touchID
+    case advancedProtection
+    case transfer
+    case vault
+    case danger
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: "全部"
+        case .login: "登录"
+        case .account: "账户"
+        case .touchID: "Touch ID"
+        case .advancedProtection: "高级保护"
+        case .transfer: "导入导出"
+        case .vault: "保险柜"
+        case .danger: "危险操作"
+        }
+    }
+}
+
+enum SecurityLogResult: String, Codable, Sendable {
+    case success
+    case failure
+    case blocked
+
+    var label: String {
+        switch self {
+        case .success: "成功"
+        case .failure: "失败"
+        case .blocked: "已阻止"
+        }
+    }
+}
+
+enum SecurityLogEventType: String, Codable, Sendable {
+    case accountCreated
+    case loginSucceeded
+    case locked
+    case touchIDEnabled
+    case touchIDDisabled
+    case touchIDFailed
+    case touchIDDowngraded
+    case passwordChanged
+    case recoveryCodeGenerated
+    case advancedProtectionEnabled
+    case advancedProtectionDisabled
+    case noteCopied
+    case noteExported
+    case sharedNoteExported
+    case sharedNoteImported
+    case vaultFilesImported
+    case vaultFileExported
+    case vaultFileDeleted
+    case vaultFileNameCopied
+    case backupCreated
+    case backupRestored
+    case accountDeleted
+    case dataErased
+    case securityLogsCleared
+    case protectedActionBlocked
+
+    var label: String {
+        switch self {
+        case .accountCreated: "创建账户"
+        case .loginSucceeded: "登录"
+        case .locked: "锁定"
+        case .touchIDEnabled: "启用 Touch ID"
+        case .touchIDDisabled: "关闭 Touch ID"
+        case .touchIDFailed: "Touch ID 失败"
+        case .touchIDDowngraded: "Touch ID 降级"
+        case .passwordChanged: "修改账户密码"
+        case .recoveryCodeGenerated: "生成恢复码"
+        case .advancedProtectionEnabled: "开启高级保护"
+        case .advancedProtectionDisabled: "关闭高级保护"
+        case .noteCopied: "复制笔记"
+        case .noteExported: "导出笔记"
+        case .sharedNoteExported: "导出共享文件"
+        case .sharedNoteImported: "导入共享文件"
+        case .vaultFilesImported: "导入保险柜文件"
+        case .vaultFileExported: "导出保险柜文件"
+        case .vaultFileDeleted: "删除保险柜文件"
+        case .vaultFileNameCopied: "复制文件名"
+        case .backupCreated: "创建备份"
+        case .backupRestored: "还原备份"
+        case .accountDeleted: "删除账户"
+        case .dataErased: "清空数据"
+        case .securityLogsCleared: "清空安全日志"
+        case .protectedActionBlocked: "保护拦截"
+        }
+    }
+
+    var category: SecurityLogCategory {
+        switch self {
+        case .loginSucceeded, .locked:
+            return .login
+        case .accountCreated, .passwordChanged, .recoveryCodeGenerated:
+            return .account
+        case .touchIDEnabled, .touchIDDisabled, .touchIDFailed, .touchIDDowngraded:
+            return .touchID
+        case .advancedProtectionEnabled, .advancedProtectionDisabled, .protectedActionBlocked:
+            return .advancedProtection
+        case .noteExported, .sharedNoteExported, .sharedNoteImported, .backupCreated, .backupRestored:
+            return .transfer
+        case .vaultFilesImported, .vaultFileExported, .vaultFileDeleted, .vaultFileNameCopied:
+            return .vault
+        case .accountDeleted, .dataErased, .securityLogsCleared:
+            return .danger
+        case .noteCopied:
+            return .transfer
+        }
+    }
+}
+
+struct SecurityLogEntry: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    var timestamp: Date = .now
+    var eventType: SecurityLogEventType
+    var result: SecurityLogResult
+    var accountName: String
+    var message: String
 }
 
 enum AccountRole: String, Codable, CaseIterable, Identifiable, Equatable, Sendable {
