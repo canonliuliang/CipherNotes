@@ -2300,7 +2300,7 @@ struct SecurityCenterView: View {
             }
         }
         .padding(24)
-        .frame(width: 680, height: 660)
+        .frame(minWidth: 640, idealWidth: 720, minHeight: 640, idealHeight: 720)
         .alert("密笺", isPresented: storeErrorPresented) {
             Button("好") { store.errorMessage = nil }
         } message: {
@@ -2521,7 +2521,6 @@ struct UserManagementView: View {
     @State private var passwordConfirmation = ""
     @State private var currentPassword = ""
     @State private var confirmationText = ""
-    @State private var confirmingFullReset = false
 
     var body: some View {
         ScrollView {
@@ -2597,14 +2596,21 @@ struct UserManagementView: View {
             Label("危险操作", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline)
                 .foregroundStyle(.red)
-            Text("删除当前账户、清空全部数据都需要当前账户密码和确认文字，并会再弹出 macOS 确认。")
+            Text("删除当前账户、清空全部数据都需要当前账户密码、对应确认文字和 macOS 二次确认。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             SecureField("当前账户密码", text: $currentPassword)
                 .textFieldStyle(.roundedBorder)
-            TextField(confirmingFullReset ? "输入：清空全部数据" : "输入：删除我的账户", text: $confirmationText)
+            TextField("输入确认文字", text: $confirmationText)
                 .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 5) {
+                Label("删除当前账户：输入“删除我的账户”", systemImage: deleteConfirmationReady ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(deleteConfirmationReady ? .mint : .secondary)
+                Label("清空全部数据：输入“清空全部数据”", systemImage: eraseConfirmationReady ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(eraseConfirmationReady ? .mint : .secondary)
+            }
+            .font(.caption)
             ViewThatFits(in: .horizontal) {
                 dangerButtons
                 VStack(alignment: .leading, spacing: 8) {
@@ -2625,6 +2631,14 @@ struct UserManagementView: View {
         }
     }
 
+    private var deleteConfirmationReady: Bool {
+        !currentPassword.isEmpty && confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "删除我的账户"
+    }
+
+    private var eraseConfirmationReady: Bool {
+        !currentPassword.isEmpty && confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "清空全部数据"
+    }
+
     private var deleteCurrentAccountButton: some View {
         Button("删除当前账户", role: .destructive) {
             guard confirmWithSystem(title: "删除当前账户？", message: "这会永久删除当前账户的笔记、保险柜文件、恢复码包装密钥和 Touch ID 快捷解锁项。") else { return }
@@ -2634,23 +2648,22 @@ struct UserManagementView: View {
             }
             if store.state != .unlocked { dismiss() }
         }
-        .disabled(store.currentAccountID == nil)
+        .disabled(store.currentAccountID == nil || !deleteConfirmationReady)
     }
 
     private var eraseAllDataButton: some View {
         Button("清空全部数据", role: .destructive) {
-            confirmingFullReset = true
             guard confirmWithSystem(title: "清空全部密笺数据？", message: "这会永久删除这台 Mac 上所有密笺账户、笔记和保险柜文件。") else { return }
             store.eraseAllDataAndStartFresh(currentPassword: currentPassword, confirmationText: confirmationText)
             if store.state == .needsAdminSetup {
                 hasSeenIntro = false
                 currentPassword = ""
                 confirmationText = ""
-                confirmingFullReset = false
                 dismiss()
             }
         }
         .buttonStyle(.borderedProminent)
+        .disabled(!eraseConfirmationReady)
     }
 
     private func accountRow(_ account: AccountSummary) -> some View {
@@ -2712,6 +2725,18 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.4",
+            version: "1.0.4",
+            title: "危险操作确认与窗口适配",
+            dateText: "2026-07-05",
+            items: [
+                "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
+                "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
+                "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",
+                "README、官网、Pages、打包配置和发布说明同步到 1.0.4。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.3",
             version: "1.0.3",

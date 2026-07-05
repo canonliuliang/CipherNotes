@@ -14,7 +14,7 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.3` · GitHub 风格官网与发布流程.
+- Current release: `1.0.4` · 危险操作确认与窗口适配.
 - `密笺安装器.pkg`: recommended installer.
 - `密笺-macOS.zip`: portable archive.
 
@@ -118,8 +118,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -131,6 +131,13 @@ The `Release` workflow validates the version, runs the package script, creates o
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.4 - 危险操作确认与窗口适配
+
+- Improved the Account & Security danger zone: delete-account and erase-all-data now show separate confirmation requirements.
+- Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
+- Changed Security Center and Account & Security sheets to use more flexible window sizing.
+- Kept release metadata, README, website, GitHub Pages, packaging, and in-app changelog aligned.
 
 ### 1.0.3 - GitHub 风格官网与发布流程
 

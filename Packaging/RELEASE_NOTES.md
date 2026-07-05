@@ -1,15 +1,16 @@
-# CipherNotes 1.0.3 - GitHub 风格官网与发布流程
+# CipherNotes 1.0.4 - 危险操作确认与窗口适配
 
 ## Summary
 
-CipherNotes 1.0.3 focuses on product polish and publishing clarity. The website now uses a GitHub-inspired repository layout, the release/download story is clearer, and all public-facing version references are aligned with the packaged release.
+CipherNotes 1.0.4 improves everyday safety and polish around destructive actions. The Account & Security danger zone now makes delete-account and erase-all-data confirmations explicit, and key security sheets use more flexible sizing.
 
 ## What's Changed
 
-- Rebuilt the website with a GitHub-style header, repository hero, Release card, README section, privacy matrix, development flow, and download panel.
-- Replaced rough character/CSS icons with consistent inline SVG icons.
-- Clarified that pushing source code updates the repository and Pages, but public downloads update only after a GitHub Release is created or updated with the new installer/archive assets.
-- Synchronized README, website, GitHub Pages, local product introduction output, release metadata, Info.plist, and the in-app changelog to version 1.0.3.
+- Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
+- Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
+- Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.
+- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.4.
+- Preserved the GitHub-inspired product website and automated Release workflow from 1.0.3.
 
 ## Downloads
 
@@ -24,4 +25,4 @@ CipherNotes 1.0.3 focuses on product polish and publishing clarity. The website 
 
 ## Publishing Reminder
 
-After pushing `main`, either push tag `v1.0.3` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
+After pushing `main`, either push tag `v1.0.4` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
