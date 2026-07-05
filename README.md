@@ -14,6 +14,7 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
+- Current release: `1.0.2` · 虚假密码与清晰按钮.
 - `密笺安装器.pkg`: recommended installer.
 - `密笺-macOS.zip`: portable archive.
 
@@ -95,6 +96,8 @@ swift test --scratch-path /tmp/ciphernotes-test
 
 ## Package
 
+Release metadata is centralized in `Packaging/release.env`. Before publishing a new download, update that file, then run:
+
 ```sh
 Packaging/build-release.sh
 ```
@@ -109,11 +112,27 @@ The script runs tests, builds the release app, and updates:
 
 The repository avoids keeping an expanded `.app` bundle in `outputs` to reduce Spotlight and Git noise. Unzip the release archive when you need the app bundle.
 
+Pushing source code to GitHub does not update what users download from the website. The website download button points to GitHub Releases latest, so a new public download requires a new GitHub Release, or updating the latest Release assets with the newly built `pkg` and `zip`.
+
 ## Upgrade From Older Vaults
 
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.2 - 虚假密码与清晰按钮
+
+- Added Advanced Data Protection decoy password actions for fake-space entry or local data destruction.
+- Added a non-persistent decoy space that does not read or write the real vault.
+- Improved button contrast for the bottom toolbar, vault cards, account rows, Security Center sections, and security log rows.
+- Updated the in-app changelog so recent security changes are visible inside the app.
+
+### 1.0.1 - 本地安全日志与高级保护收口
+
+- Added encrypted local security logs in Security Center.
+- Blocked copy, plain export, shared import/export, vault preview, vault export, and sensitive filename copying when Advanced Data Protection is enabled.
+- Removed external password-manager helper prompts.
+- Reworked README and website download links around GitHub Releases latest.
 
 ### 1.0.0
 

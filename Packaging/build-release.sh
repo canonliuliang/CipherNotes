@@ -10,6 +10,12 @@ PRODUCTBUILD_LOG="/tmp/ciphernotes-productbuild.log"
 
 cd "$ROOT_DIR"
 
+source "$ROOT_DIR/Packaging/release.env"
+
+grep -q "version: \"$CIPHERNOTES_VERSION\"" "$ROOT_DIR/Sources/CipherNotes/Views.swift"
+grep -q "Current release: \`$CIPHERNOTES_VERSION\`" "$ROOT_DIR/README.md"
+grep -q "当前发布包 $CIPHERNOTES_VERSION" "$ROOT_DIR/Website/index.html"
+
 swift Packaging/generate-icon.swift
 iconutil -c icns "/tmp/ciphernotes-iconbuild/AppIcon.iconset" -o "$ROOT_DIR/Assets/AppIcon.icns"
 swift test --scratch-path /tmp/ciphernotes-test
@@ -19,6 +25,8 @@ rm -rf "$APPBUILD_DIR"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$BUILD_DIR/release/CipherNotes" "$APP_PATH/Contents/MacOS/CipherNotes"
 cp "$ROOT_DIR/Packaging/Info.plist" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $CIPHERNOTES_VERSION" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CIPHERNOTES_BUILD" "$APP_PATH/Contents/Info.plist"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP_PATH/Contents/Resources/AppIcon.icns"
 chmod +x "$APP_PATH/Contents/MacOS/CipherNotes"
 xattr -cr "$APP_PATH" >/dev/null 2>&1 || true
@@ -28,6 +36,7 @@ mkdir -p "$OUTPUTS_DIR"
 
 cp "$ROOT_DIR/README.md" "$OUTPUTS_DIR/使用说明.md"
 cp "$ROOT_DIR/Assets/AppIcon-1024.png" "$OUTPUTS_DIR/密笺图标.png"
+cp "$ROOT_DIR/Website/index.html" "$ROOT_DIR/docs/index.html"
 sed 's|../outputs/密笺安装器.pkg|密笺安装器.pkg|g; s|../outputs/密笺-macOS.zip|密笺-macOS.zip|g' "$ROOT_DIR/Website/index.html" > "$OUTPUTS_DIR/产品介绍.html"
 
 rm -f "$OUTPUTS_DIR/密笺安装器.pkg" "$OUTPUTS_DIR/密笺-macOS.zip"

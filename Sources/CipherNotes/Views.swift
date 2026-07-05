@@ -194,9 +194,9 @@ struct RootView: View {
                     Label("法律声明", systemImage: "doc.text.magnifyingglass")
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(ClearButtonStyle())
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
             .background(.bar)
@@ -312,6 +312,70 @@ struct GlassPanel: ViewModifier {
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
             .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
+    }
+}
+
+struct ClearButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    var prominence: Prominence = .standard
+
+    enum Prominence {
+        case standard
+        case primary
+        case danger
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(foregroundColor)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .frame(minHeight: 30)
+            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var foregroundColor: Color {
+        switch prominence {
+        case .standard:
+            colorScheme == .dark ? .white : Color(red: 0.09, green: 0.12, blue: 0.15)
+        case .primary:
+            .white
+        case .danger:
+            colorScheme == .dark ? Color(red: 1.0, green: 0.82, blue: 0.82) : Color(red: 0.58, green: 0.05, blue: 0.06)
+        }
+    }
+
+    private func backgroundColor(_ isPressed: Bool) -> Color {
+        switch prominence {
+        case .standard:
+            colorScheme == .dark
+                ? Color.white.opacity(isPressed ? 0.20 : 0.14)
+                : Color.white.opacity(isPressed ? 0.92 : 0.78)
+        case .primary:
+            Color(red: 0.0, green: 0.42, blue: 0.82).opacity(isPressed ? 0.82 : 1)
+        case .danger:
+            colorScheme == .dark
+                ? Color.red.opacity(isPressed ? 0.28 : 0.18)
+                : Color.red.opacity(isPressed ? 0.20 : 0.12)
+        }
+    }
+
+    private var borderColor: Color {
+        switch prominence {
+        case .standard:
+            colorScheme == .dark ? .white.opacity(0.20) : .black.opacity(0.16)
+        case .primary:
+            .white.opacity(0.28)
+        case .danger:
+            .red.opacity(colorScheme == .dark ? 0.45 : 0.34)
+        }
     }
 }
 
@@ -1424,7 +1488,7 @@ struct NoteEditor: View {
                     .labelStyle(.iconOnly)
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(ClearButtonStyle())
             .padding(.horizontal, 28).padding(.top, 24)
             if let note {
                 HStack(spacing: 10) {
@@ -1754,11 +1818,15 @@ struct VaultItemCard: View {
                 Spacer()
                 Button("删除", role: .destructive) { store.deleteVaultItem(itemID: item.id) }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(ClearButtonStyle())
             .font(.caption)
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(.primary.opacity(0.10), lineWidth: 1)
+        }
         .task(id: item.id) {
             if isImage && !store.currentAccountAdvancedDataProtectionEnabled {
                 preview = store.previewVaultImage(itemID: item.id)
@@ -2077,7 +2145,7 @@ struct SecurityCenterView: View {
                                 Label("生成恢复码", systemImage: "key.fill")
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ClearButtonStyle())
                     }
                     .securitySection()
 
@@ -2157,7 +2225,7 @@ struct SecurityCenterView: View {
                                 Label("复制数据位置", systemImage: "doc.on.doc")
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ClearButtonStyle())
                     }
                     .securitySection()
                 }
@@ -2337,7 +2405,11 @@ struct SecurityLogRow: View {
             Spacer(minLength: 8)
         }
         .padding(10)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(0.24), lineWidth: 1)
+        }
     }
 
     private var iconName: String {
@@ -2377,6 +2449,10 @@ private extension View {
     func securitySection() -> some View {
         padding(14)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(.primary.opacity(0.10), lineWidth: 1)
+            }
     }
 }
 
@@ -2552,12 +2628,16 @@ struct UserManagementView: View {
                 Button("关闭 Touch ID") {
                     store.disableTouchID(userID: account.id)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(ClearButtonStyle())
                 .lineLimit(1)
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(isCurrent ? 0.9 : 0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isCurrent ? Color.mint.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 1)
+        }
     }
 
     private func confirmWithSystem(title: String, message: String) -> Bool {
@@ -2575,6 +2655,31 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.2",
+            version: "1.0.2",
+            title: "虚假密码与清晰按钮",
+            dateText: "2026-07-05",
+            items: [
+                "高级数据保护新增虚假密码：输入虚假密码可进入临时虚假空间，不打开真实保险库。",
+                "虚假密码也可设置为直接销毁本地保险库数据，适合极端场景；该模式不可逆，请谨慎开启。",
+                "设置和关闭虚假密码都需要当前账户真实密码，应用不会保存明文虚假密码。",
+                "提高底部工具栏和关键按钮的对比度，减少按钮与背景融为一体的问题。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.0.1",
+            version: "1.0.1",
+            title: "本地安全日志与高级保护收口",
+            dateText: "2026-07-05",
+            items: [
+                "安全中心新增本地安全日志，记录登录、锁定、Touch ID、高级保护、导入导出和危险操作。",
+                "安全日志随当前账户加密保存，不记录笔记正文、文件内容、明文密码、恢复码或敏感文件名。",
+                "高级数据保护开启后阻止复制、普通导出、共享导入导出、保险柜预览、保险柜导出和复制保险柜文件名。",
+                "移除 Apple 密码 App 辅助保存入口，避免钥匙串权限错误影响体验。",
+                "README 和官网改成更正式的产品展示，下载入口统一指向 GitHub Releases latest。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.0",
             version: "1.0.0",
