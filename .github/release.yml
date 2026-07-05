@@ -1,0 +1,25 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - github-actions
+  categories:
+    - title: Security and privacy
+      labels:
+        - security
+        - privacy
+    - title: Product and UX
+      labels:
+        - enhancement
+        - design
+    - title: Fixes
+      labels:
+        - bug
+    - title: Documentation and website
+      labels:
+        - documentation
+        - website
+    - title: Other changes
+      labels:
+        - "*"

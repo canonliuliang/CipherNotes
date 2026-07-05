@@ -3,1078 +3,567 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>密笺 CipherNotes - 本地加密记事本与文件保险柜</title>
-  <meta name="description" content="密笺 CipherNotes 是纯本地、纯免费的 macOS 加密记事本与文件保险柜。支持多账号、恢复码、Touch ID、本地备份和大文件分片加密。">
+  <title>密笺 CipherNotes - Local-first encrypted notes for macOS</title>
+  <meta name="description" content="CipherNotes 是隐私优先、完全本地的 macOS 加密记事本与文件保险柜。">
   <style>
     :root {
-      color-scheme: light;
-      --ink: #1d1d1f;
-      --soft-ink: #424245;
-      --muted: #6e6e73;
-      --line: #d2d2d7;
-      --paper: #ffffff;
-      --wash: #f5f5f7;
-      --blue: #0071e3;
-      --cyan: #00a7b5;
-      --green: #248a3d;
-      --red: #b42318;
-      --shadow: 0 36px 90px rgba(0, 0, 0, .15);
-      --small-shadow: 0 18px 44px rgba(0, 0, 0, .08);
-      --radius: 22px;
+      color-scheme: light dark;
+      --canvas: #f6f8fa;
+      --canvas-subtle: #ffffff;
+      --canvas-inset: #f6f8fa;
+      --fg: #1f2328;
+      --muted: #59636e;
+      --subtle: #818b98;
+      --border: #d0d7de;
+      --border-muted: #d8dee4;
+      --accent: #0969da;
+      --accent-emphasis: #0969da;
+      --success: #1a7f37;
+      --attention: #9a6700;
+      --danger: #cf222e;
+      --purple: #8250df;
+      --shadow: 0 20px 50px rgba(31, 35, 40, .10);
+      --radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #0d1117;
+        --canvas-subtle: #161b22;
+        --canvas-inset: #010409;
+        --fg: #e6edf3;
+        --muted: #8d96a0;
+        --subtle: #6e7681;
+        --border: #30363d;
+        --border-muted: #21262d;
+        --accent: #2f81f7;
+        --accent-emphasis: #1f6feb;
+        --success: #3fb950;
+        --attention: #d29922;
+        --danger: #f85149;
+        --purple: #a371f7;
+        --shadow: 0 22px 60px rgba(0, 0, 0, .38);
+      }
     }
 
     * { box-sizing: border-box; }
 
-    html { scroll-behavior: smooth; }
+    html {
+      scroll-behavior: smooth;
+      background: var(--canvas);
+    }
 
     body {
       margin: 0;
-      color: var(--ink);
-      background: var(--wash);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      line-height: 1.55;
+      color: var(--fg);
+      background:
+        radial-gradient(circle at 22% 0%, rgba(47, 129, 247, .16), transparent 34rem),
+        radial-gradient(circle at 86% 5%, rgba(63, 185, 80, .12), transparent 28rem),
+        var(--canvas);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.5;
       letter-spacing: 0;
-      -webkit-font-smoothing: antialiased;
     }
 
-    a { color: inherit; text-decoration: none; }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
 
-    .wrap {
-      width: min(1160px, calc(100% - 40px));
+    a:hover { text-decoration: underline; }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .container {
+      width: min(100% - 32px, 1180px);
       margin: 0 auto;
     }
 
-    header {
+    .topbar {
       position: sticky;
       top: 0;
-      z-index: 30;
-      border-bottom: 1px solid rgba(0, 0, 0, .08);
-      background: rgba(251, 251, 253, .78);
-      backdrop-filter: saturate(180%) blur(22px);
+      z-index: 20;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--canvas-subtle) 88%, transparent);
+      backdrop-filter: blur(18px);
     }
 
-    .nav {
-      min-height: 52px;
+    .topbar-inner {
+      min-height: 64px;
       display: flex;
       align-items: center;
-      gap: 22px;
+      gap: 18px;
     }
 
     .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
       min-width: 0;
-      transition: transform .22s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--fg);
+      font-weight: 650;
     }
 
-    .brand:hover { transform: translateY(-1px); }
+    .brand:hover { text-decoration: none; }
 
-    .brand img,
-    .app-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 9px;
-      box-shadow: 0 8px 20px rgba(0, 113, 227, .16);
-      transition: transform .28s ease, box-shadow .28s ease;
+    .brand img {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(9, 105, 218, .22);
     }
 
-    .brand:hover img {
-      transform: scale(1.045);
-      box-shadow: 0 12px 26px rgba(0, 113, 227, .24);
-    }
-
-    .brand strong {
-      display: block;
-      font-size: 17px;
-      line-height: 1.1;
-    }
-
-    .brand span span {
-      display: block;
-      color: var(--muted);
-      font-size: 12px;
+    .brand span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .navlinks {
-      margin-left: auto;
+    .nav {
       display: flex;
       align-items: center;
-      gap: 6px;
-      color: var(--muted);
-      font-size: 13px;
+      gap: 4px;
+      margin-left: auto;
+      overflow-x: auto;
     }
 
-    .navlinks a {
+    .nav a {
       padding: 8px 10px;
-      border-radius: 999px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
     }
 
-    .navlinks a:hover {
-      color: var(--ink);
-      background: rgba(15, 108, 189, .08);
+    .nav a:hover {
+      color: var(--fg);
+      background: color-mix(in srgb, var(--border-muted) 60%, transparent);
+      text-decoration: none;
     }
 
     .button {
+      min-height: 38px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 42px;
-      padding: 0 22px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, .72);
-      color: var(--ink);
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--fg);
+      background: var(--canvas-subtle);
+      box-shadow: 0 1px 0 rgba(31, 35, 40, .04);
       font-weight: 650;
-      white-space: nowrap;
-      transition: transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+      text-decoration: none;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
     }
 
     .button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, .10);
-      border-color: rgba(0, 113, 227, .30);
-    }
-
-    .button:active {
-      transform: translateY(0) scale(.985);
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+      box-shadow: 0 10px 24px rgba(31, 35, 40, .10);
+      text-decoration: none;
     }
 
     .button.primary {
       color: #fff;
-      background: var(--blue);
-      border-color: var(--blue);
-      box-shadow: 0 14px 30px rgba(0, 113, 227, .25);
+      border-color: color-mix(in srgb, var(--success) 84%, #000);
+      background: linear-gradient(#2da44e, #1f883d);
     }
 
     .button.dark {
       color: #fff;
-      background: #111827;
-      border-color: #111827;
+      border-color: #30363d;
+      background: #24292f;
+    }
+
+    .octicon {
+      width: 16px;
+      height: 16px;
+      flex: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
     }
 
     .hero {
-      min-height: min(820px, calc(100vh - 74px));
-      position: relative;
-      overflow: hidden;
-      display: grid;
-      align-items: center;
-      padding: 72px 0 42px;
-      background:
-        radial-gradient(circle at 50% 8%, rgba(255, 255, 255, .98), rgba(245, 245, 247, .78) 34%, rgba(245, 245, 247, 0) 58%),
-        linear-gradient(180deg, #fbfbfd 0%, #f5f5f7 72%, #ffffff 100%);
+      padding: 50px 0 26px;
     }
 
-    .hero-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      align-items: center;
-      gap: 42px;
-      text-align: center;
+    .repo-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 22px;
     }
 
-    .hero-copy {
-      position: relative;
-      z-index: 2;
-      animation: riseIn .78s cubic-bezier(.2, .8, .2, 1) both;
+    .repo-title {
+      min-width: 0;
     }
 
-    .eyebrow {
-      display: inline-flex;
+    .repo-kicker {
+      display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 6px 12px;
-      border: 1px solid rgba(0, 113, 227, .16);
-      border-radius: 999px;
-      color: var(--blue);
-      background: rgba(255, 255, 255, .68);
-      font-size: 13px;
-      font-weight: 650;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
     }
 
     h1 {
-      margin: 22px 0 18px;
-      max-width: none;
-      font-size: clamp(56px, 9vw, 118px);
-      line-height: .9;
+      margin: 8px 0 10px;
+      font-size: clamp(36px, 7vw, 82px);
+      line-height: .95;
       letter-spacing: 0;
     }
 
     .lead {
-      max-width: 760px;
-      margin: 0 auto;
-      color: var(--soft-ink);
-      font-size: clamp(20px, 2.3vw, 28px);
-      line-height: 1.32;
+      max-width: 780px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(18px, 2.1vw, 24px);
+      line-height: 1.42;
     }
 
-    .hero-actions {
+    .repo-actions {
       display: flex;
       flex-wrap: wrap;
-      justify-content: center;
-      gap: 12px;
-      margin-top: 30px;
-    }
-
-    .trust-row {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      justify-content: flex-end;
       gap: 10px;
-      max-width: 720px;
-      margin-top: 34px;
-      margin-left: auto;
-      margin-right: auto;
     }
 
-    .trust-row div {
-      position: relative;
-      overflow: hidden;
-      min-height: 86px;
-      padding: 16px 14px;
-      border: 1px solid rgba(0, 0, 0, .06);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, .68);
-      box-shadow: 0 12px 34px rgba(0, 0, 0, .04);
-      backdrop-filter: blur(18px);
-      transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
     }
 
-    .trust-row div:hover {
-      transform: translateY(-4px);
-      border-color: rgba(0, 113, 227, .18);
-      box-shadow: 0 18px 46px rgba(0, 0, 0, .075);
-    }
-
-    .trust-row div::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      transform: translateX(-130%);
-      background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, .46), transparent 68%);
-      transition: transform .7s ease;
-      pointer-events: none;
-    }
-
-    .trust-row div:hover::after { transform: translateX(130%); }
-
-    .trust-row div::before {
-      content: attr(data-icon);
-      width: 26px;
-      height: 26px;
-      display: inline-grid;
-      place-items: center;
-      margin-bottom: 8px;
-      border-radius: 8px;
-      color: #fff;
-      background: linear-gradient(135deg, #0071e3, #00a7b5);
-      box-shadow: 0 10px 22px rgba(0, 113, 227, .20);
-      font-size: 15px;
-      font-weight: 800;
-    }
-
-    .trust-row strong {
-      display: block;
-      font-size: 18px;
-    }
-
-    .trust-row span {
-      display: block;
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .stage {
-      position: relative;
-      min-height: auto;
-      display: grid;
+    .badge {
+      display: inline-flex;
       align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--canvas-subtle);
+      font-size: 13px;
+      font-weight: 600;
     }
 
-    .product-shot {
-      position: relative;
-      overflow: hidden;
-      width: min(1000px, 100%);
-      margin: 0 auto;
-      padding: 12px;
-      border: 1px solid rgba(0, 0, 0, .08);
-      border-radius: 28px;
-      background: rgba(255, 255, 255, .72);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(20px);
-      animation: liftIn .88s cubic-bezier(.2, .8, .2, 1) .12s both;
-      transition: transform .32s ease, box-shadow .32s ease;
+    .repo-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: start;
     }
 
-    .product-shot:hover {
-      transform: translateY(-6px);
-      box-shadow: 0 44px 110px rgba(0, 0, 0, .18);
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--canvas-subtle);
+      box-shadow: 0 1px 0 rgba(31, 35, 40, .04);
     }
 
-    .product-shot::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      transform: translateX(-130%);
-      background: linear-gradient(105deg, transparent 36%, rgba(255,255,255,.32), transparent 64%);
-      animation: screenshotSheen 4.8s ease-in-out 1.2s infinite;
-      pointer-events: none;
-    }
-
-    .product-shot img {
-      display: block;
-      width: 100%;
-      height: auto;
-      border-radius: 20px;
-    }
-
-    .shot-caption {
+    .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 10px 4px 2px;
-      color: var(--muted);
-      font-size: 13px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--canvas-inset) 78%, var(--canvas-subtle));
+      border-radius: var(--radius) var(--radius) 0 0;
+      font-weight: 650;
     }
 
-    .shot-caption strong {
-      color: var(--ink);
+    .panel-body { padding: 16px; }
+
+    .screenshot-shell {
+      overflow: hidden;
+    }
+
+    .window-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--canvas-inset);
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .red { background: #ff5f56; }
+    .yellow { background: #ffbd2e; }
+    .green { background: #27c93f; }
+
+    .screenshot-shell img {
+      width: 100%;
+      background: var(--canvas-subtle);
+    }
+
+    .sidebar {
+      display: grid;
+      gap: 14px;
+    }
+
+    .release-card h2,
+    .about-card h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .release-version {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--success);
+      font-size: 24px;
+      font-weight: 750;
+    }
+
+    .release-note {
+      margin: 8px 0 14px;
+      color: var(--muted);
       font-size: 14px;
     }
 
-    .mac-window {
-      width: min(660px, 100%);
-      margin-left: auto;
+    .sidebar-list {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .sidebar-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .sidebar-list span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .readme {
+      margin: 18px 0 54px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--canvas-subtle);
       overflow: hidden;
-      border: 1px solid rgba(190, 203, 216, .92);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, .92);
-      box-shadow: var(--shadow);
     }
 
-    .traffic {
-      height: 42px;
+    .readme-title {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 0 16px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(248, 251, 253, .96);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--canvas-inset);
+      font-weight: 650;
     }
 
-    .traffic span {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: #c7d2df;
+    .readme-content {
+      padding: 26px;
     }
 
-    .app-shell {
-      display: grid;
-      grid-template-columns: 190px 1fr;
-      min-height: 440px;
-    }
-
-    .side {
-      padding: 18px 14px;
-      border-right: 1px solid var(--line);
-      background: #f5f8fb;
-    }
-
-    .mini-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 20px;
-      font-weight: 750;
-    }
-
-    .mini-brand img {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-    }
-
-    .rail {
-      display: grid;
-      gap: 8px;
-    }
-
-    .rail div {
-      height: 34px;
-      border-radius: 6px;
-      background: #e3ebf2;
-    }
-
-    .rail .active {
-      background: var(--blue);
-      box-shadow: inset 4px 0 0 rgba(255, 255, 255, .55);
-    }
-
-    .workspace {
-      padding: 24px;
-      background: #fff;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .search {
-      width: min(260px, 100%);
-      height: 36px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #f7fafc;
-    }
-
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--green);
-      font-size: 13px;
-      font-weight: 750;
-    }
-
-    .status::before {
-      content: "";
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--green);
-    }
-
-    .doc-title {
-      margin: 0 0 7px;
-      font-size: 28px;
-      line-height: 1.15;
-    }
-
-    .doc-meta {
-      margin-bottom: 24px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .line {
-      height: 13px;
-      margin: 13px 0;
-      border-radius: 5px;
-      background: #dbe7ef;
-    }
-
-    .line.mid { width: 76%; }
-    .line.short { width: 52%; }
-
-    .vault-panel {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 26px;
-    }
-
-    .vault-panel div {
-      min-height: 92px;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #f7fafc;
-    }
-
-    .vault-panel strong {
-      display: block;
-      color: var(--blue);
-      font-size: 22px;
-      line-height: 1;
-    }
-
-    .vault-panel span {
-      display: block;
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .float-card {
-      position: absolute;
-      right: 18px;
-      bottom: 22px;
-      width: min(290px, calc(100% - 24px));
-      padding: 16px;
-      border: 1px solid rgba(215, 222, 232, .92);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, .94);
-      box-shadow: var(--small-shadow);
-    }
-
-    .float-card strong {
-      display: block;
-      font-size: 15px;
-    }
-
-    .float-card p {
-      margin: 5px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    section {
-      padding: 104px 0;
-      border-top: 0;
-      background: var(--wash);
-    }
-
-    section.white { background: #fff; }
-
-    .section-head {
-      max-width: 760px;
-      margin: 0 auto 44px;
-      text-align: center;
-    }
-
-    .section-head h2 {
-      margin: 0 0 12px;
-      font-size: clamp(40px, 5.4vw, 72px);
-      line-height: .98;
+    .readme-content h2 {
+      margin: 36px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-muted);
+      font-size: 24px;
       letter-spacing: 0;
     }
 
-    .section-head p {
-      margin: 0;
+    .readme-content h2:first-child { margin-top: 0; }
+
+    .readme-content p {
       color: var(--muted);
-      font-size: 21px;
-      line-height: 1.38;
+      margin: 0 0 14px;
     }
 
     .feature-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
+      gap: 12px;
+      margin-top: 16px;
     }
 
     .feature {
-      position: relative;
-      overflow: hidden;
-      min-height: 250px;
-      padding: 28px;
-      border: 1px solid rgba(0, 0, 0, .06);
-      border-radius: 22px;
-      background: var(--paper);
-      box-shadow: 0 18px 42px rgba(0, 0, 0, .045);
-      transition: transform .26s ease, box-shadow .26s ease, border-color .26s ease;
-      will-change: transform;
+      min-height: 178px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--canvas);
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
     }
 
     .feature:hover {
-      transform: translateY(-6px);
-      border-color: rgba(0, 113, 227, .14);
-      box-shadow: 0 28px 70px rgba(0, 0, 0, .075);
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+      background: color-mix(in srgb, var(--canvas-subtle) 70%, var(--canvas));
     }
 
-    .feature:hover .feature-icon {
-      transform: translateY(-2px) scale(1.045);
-    }
-
-    .feature::after {
-      content: "";
-      position: absolute;
-      inset: auto -28px -52px auto;
-      width: 132px;
-      height: 132px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(0, 113, 227, .10), rgba(0, 113, 227, 0) 66%);
-      pointer-events: none;
-    }
-
-    .feature-icon {
-      position: relative;
-      width: 54px;
-      height: 54px;
-      display: grid;
-      place-items: center;
-      margin-bottom: 22px;
-      border: 1px solid rgba(255, 255, 255, .78);
-      border-radius: 16px;
-      color: #fff;
-      background:
-        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
-        linear-gradient(145deg, #0071e3 0%, #00a7b5 100%);
-      box-shadow: 0 16px 34px rgba(0, 113, 227, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
-      font-size: 0;
-      transition: transform .26s ease, box-shadow .26s ease;
-    }
-
-    .feature:nth-child(2) .feature-icon,
-    .feature:nth-child(5) .feature-icon {
-      background:
-        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
-        linear-gradient(145deg, #00a7b5 0%, #30d158 100%);
-      box-shadow: 0 16px 34px rgba(0, 167, 181, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
-    }
-
-    .feature:nth-child(3) .feature-icon,
-    .feature:nth-child(6) .feature-icon {
-      background:
-        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
-        linear-gradient(145deg, #248a3d 0%, #64d2ff 100%);
-      box-shadow: 0 16px 34px rgba(36, 138, 61, .20), inset 0 1px 0 rgba(255, 255, 255, .48);
-    }
-
-    .feature-icon::before,
-    .feature-icon::after {
-      content: "";
-      position: absolute;
-      box-sizing: border-box;
-      border-color: currentColor;
-    }
-
-    .feature-icon::before {
-      width: 26px;
-      height: 26px;
-      border: 2px solid currentColor;
-      border-radius: 8px;
-    }
-
-    .feature-icon::after {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .feature-icon[data-symbol="lock"]::before {
-      width: 25px;
-      height: 20px;
-      top: 26px;
-      border-radius: 7px;
-    }
-
-    .feature-icon[data-symbol="lock"]::after {
-      width: 18px;
-      height: 16px;
-      top: 14px;
-      border: 2px solid currentColor;
-      border-bottom: 0;
-      border-radius: 12px 12px 0 0;
-      background: transparent;
-    }
-
-    .feature-icon[data-symbol="files"]::before {
-      width: 24px;
-      height: 28px;
-      transform: translate(4px, 2px);
-      border-radius: 6px;
-    }
-
-    .feature-icon[data-symbol="files"]::after {
-      width: 24px;
-      height: 28px;
-      transform: translate(-4px, -2px);
-      border: 2px solid currentColor;
-      border-radius: 6px;
-      background: transparent;
-    }
-
-    .feature-icon[data-symbol="bolt"]::before {
-      width: 16px;
-      height: 30px;
-      border: 0;
-      border-radius: 0;
-      background: currentColor;
-      clip-path: polygon(55% 0, 12% 52%, 46% 52%, 35% 100%, 88% 40%, 54% 40%);
-    }
-
-    .feature-icon[data-symbol="bolt"]::after { display: none; }
-
-    .feature-icon[data-symbol="users"]::before {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      transform: translate(-7px, -7px);
-    }
-
-    .feature-icon[data-symbol="users"]::after {
-      width: 22px;
-      height: 12px;
-      border: 2px solid currentColor;
-      border-radius: 12px 12px 5px 5px;
-      background: transparent;
-      transform: translate(5px, 8px);
-    }
-
-    .feature-icon[data-symbol="free"]::before {
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-    }
-
-    .feature-icon[data-symbol="free"]::after {
-      width: 14px;
-      height: 2px;
-      border-radius: 2px;
-      box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
-    }
-
-    .feature-icon[data-symbol="leaf"]::before {
-      width: 28px;
-      height: 20px;
-      border-radius: 18px 18px 18px 3px;
-      transform: rotate(-24deg);
-    }
-
-    .feature-icon[data-symbol="leaf"]::after {
-      width: 18px;
-      height: 2px;
-      border-radius: 2px;
-      transform: rotate(-24deg);
-    }
-
-    .feature-icon[data-symbol="log"]::before {
-      width: 26px;
-      height: 30px;
-      border-radius: 7px;
-    }
-
-    .feature-icon[data-symbol="log"]::after {
-      width: 15px;
-      height: 2px;
-      border-radius: 2px;
-      box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
-    }
-
-    .feature-icon[data-symbol="home"]::before {
-      width: 27px;
-      height: 22px;
-      border-radius: 5px;
-      transform: translateY(5px);
-    }
-
-    .feature-icon[data-symbol="home"]::after {
+    .feature .octicon {
       width: 22px;
       height: 22px;
-      border: 2px solid currentColor;
-      border-right: 0;
-      border-bottom: 0;
-      border-radius: 3px;
-      background: transparent;
-      transform: translateY(-7px) rotate(45deg);
+      margin-bottom: 12px;
+      color: var(--accent);
     }
-
-    .feature-icon[data-symbol="shield"]::before {
-      width: 28px;
-      height: 32px;
-      border-radius: 14px 14px 16px 16px;
-      clip-path: polygon(50% 0, 100% 18%, 88% 76%, 50% 100%, 12% 76%, 0 18%);
-    }
-
-    .feature-icon[data-symbol="shield"]::after { display: none; }
-
-    .feature-icon[data-symbol="mask"]::before {
-      width: 31px;
-      height: 22px;
-      border-radius: 50% 50% 12px 12px;
-    }
-
-    .feature-icon[data-symbol="mask"]::after {
-      width: 5px;
-      height: 5px;
-      box-shadow: 13px 0 0 currentColor;
-      transform: translate(-7px, -1px);
-    }
-
-    .feature-icon[data-symbol="search"]::before {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      transform: translate(-4px, -4px);
-    }
-
-    .feature-icon[data-symbol="search"]::after {
-      width: 14px;
-      height: 3px;
-      border-radius: 2px;
-      transform: translate(10px, 10px) rotate(45deg);
-    }
-
-    .feature-icon[data-symbol="key"]::before {
-      width: 15px;
-      height: 15px;
-      border-radius: 50%;
-      transform: translate(-8px, 0);
-    }
-
-    .feature-icon[data-symbol="key"]::after {
-      width: 23px;
-      height: 3px;
-      border-radius: 3px;
-      box-shadow: 9px 6px 0 -1px currentColor;
-      transform: translate(8px, 0);
-    }
-
-    .feature-icon[data-symbol="check"]::before {
-      width: 27px;
-      height: 16px;
-      border: 0;
-      border-left: 4px solid currentColor;
-      border-bottom: 4px solid currentColor;
-      border-radius: 0;
-      transform: rotate(-45deg) translate(1px, -2px);
-    }
-
-    .feature-icon[data-symbol="check"]::after { display: none; }
 
     .feature h3 {
-      margin: 0 0 9px;
-      font-size: 22px;
-      letter-spacing: 0;
+      margin: 0 0 8px;
+      font-size: 17px;
     }
 
     .feature p {
       margin: 0;
       color: var(--muted);
-      font-size: 16px;
-      line-height: 1.62;
+      font-size: 14px;
     }
 
-    .deep-band {
-      color: #f8fbfd;
-      background:
-        radial-gradient(circle at 50% 0%, rgba(0, 113, 227, .22), transparent 45%),
-        #0b0f17;
-    }
-
-    .deep-band .section-head p { color: #bdc7d4; }
-
-    .vault-flow {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      counter-reset: step;
-    }
-
-    .flow-step {
-      position: relative;
+    .terminal {
       overflow: hidden;
-      min-height: 220px;
-      padding: 22px;
-      border: 1px solid rgba(255, 255, 255, .18);
-      border-radius: 22px;
-      background: rgba(255, 255, 255, .07);
-      backdrop-filter: blur(18px);
-      transition: transform .26s ease, border-color .26s ease, background .26s ease;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #0d1117;
+      color: #e6edf3;
+      box-shadow: var(--shadow);
     }
 
-    .flow-step:hover {
-      transform: translateY(-6px);
-      border-color: rgba(116, 215, 201, .42);
-      background: rgba(255, 255, 255, .10);
-    }
-
-    .flow-step:hover::after {
-      transform: rotate(4deg) scale(1.06);
-    }
-
-    .flow-step::after {
-      content: attr(data-icon);
-      position: absolute;
-      right: 18px;
-      top: 18px;
-      width: 42px;
-      height: 42px;
-      display: grid;
-      place-items: center;
-      border: 1px solid rgba(255, 255, 255, .18);
-      border-radius: 14px;
-      color: #fff;
-      background: linear-gradient(145deg, rgba(0, 113, 227, .72), rgba(0, 167, 181, .58));
-      box-shadow: 0 14px 32px rgba(0, 113, 227, .28);
-      font-size: 20px;
-      font-weight: 800;
-      transition: transform .26s ease;
-    }
-
-    .flow-step::before {
-      counter-increment: step;
-      content: "0" counter(step);
-      display: inline-grid;
-      place-items: center;
-      width: 42px;
-      height: 42px;
-      margin-bottom: 22px;
-      border-radius: 50%;
-      color: #061116;
-      background: #74d7c9;
-      box-shadow: 0 12px 26px rgba(116, 215, 201, .25);
-      font-weight: 850;
-    }
-
-    .flow-step h3 {
-      margin: 0 0 8px;
-      font-size: 20px;
-    }
-
-    .flow-step p {
-      margin: 0;
-      color: #bdc7d4;
-      font-size: 14px;
-    }
-
-    .split {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-    }
-
-    .panel {
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      background: var(--paper);
-      box-shadow: 0 14px 34px rgba(0, 0, 0, .045);
-      transition: transform .24s ease, box-shadow .24s ease;
-    }
-
-    .panel:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 22px 54px rgba(0, 0, 0, .07);
-    }
-
-    .panel h3 {
-      margin: 0 0 16px;
-      font-size: 23px;
-    }
-
-    .checklist {
-      display: grid;
-      gap: 13px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      color: var(--muted);
-    }
-
-    .checklist li {
-      display: grid;
-      grid-template-columns: 24px 1fr;
-      gap: 10px;
-    }
-
-    .checklist li::before {
-      content: "";
-      width: 18px;
-      height: 18px;
-      margin-top: 3px;
-      border-radius: 5px;
-      background:
-        linear-gradient(135deg, transparent 50%, rgba(255,255,255,.28) 50%),
-        var(--green);
-    }
-
-    .quote {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
-      gap: 36px;
+    .terminal-head {
+      display: flex;
       align-items: center;
-      padding: 36px;
-      border: 1px solid var(--line);
-      border-radius: 26px;
-      background: var(--paper);
-      box-shadow: var(--small-shadow);
-      transition: transform .26s ease, box-shadow .26s ease;
-    }
-
-    .quote:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, .10);
-    }
-
-    .quote h2 {
-      margin: 0 0 12px;
-      font-size: clamp(38px, 5vw, 64px);
-      line-height: 1;
-    }
-
-    .quote p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 18px;
-    }
-
-    .release-card {
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      background: var(--wash);
-    }
-
-    .release-card strong {
-      display: block;
-      margin-bottom: 8px;
-    }
-
-    .release-card span {
-      display: block;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    footer {
-      padding: 30px 0 44px;
-      border-top: 1px solid rgba(0, 0, 0, .08);
-      color: var(--muted);
-      background: #fff;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #30363d;
+      color: #8b949e;
+      font-family: var(--mono);
       font-size: 13px;
     }
 
-    .motion-ready .reveal {
+    pre {
+      margin: 0;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .prompt { color: #7ee787; }
+    .comment { color: #8b949e; }
+    .path { color: #79c0ff; }
+
+    .privacy-table {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .privacy-box {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--canvas);
+    }
+
+    .privacy-box h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .privacy-box ul {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--canvas);
+    }
+
+    .timeline-item strong {
+      color: var(--accent);
+    }
+
+    .download-band {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid color-mix(in srgb, var(--success) 36%, var(--border));
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--success) 8%, var(--canvas-subtle));
+    }
+
+    .download-band h2 { margin-top: 0; }
+
+    .download-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    footer {
+      padding: 28px 0 44px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .reveal {
       opacity: 0;
-      transform: translateY(28px);
-      transition: opacity .7s ease, transform .7s cubic-bezier(.2, .8, .2, 1);
+      transform: translateY(18px);
+      animation: reveal .58s ease forwards;
     }
 
-    .motion-ready .reveal.is-visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .delay-1 { animation-delay: .08s; }
+    .delay-2 { animation-delay: .16s; }
 
-    .motion-ready .reveal-stagger > * {
-      opacity: 0;
-      transform: translateY(20px);
-      transition: opacity .62s ease, transform .62s cubic-bezier(.2, .8, .2, 1);
-    }
-
-    .motion-ready .reveal-stagger.is-visible > * {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(2) { transition-delay: .06s; }
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(3) { transition-delay: .12s; }
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(4) { transition-delay: .18s; }
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(5) { transition-delay: .24s; }
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(6) { transition-delay: .30s; }
-    .motion-ready .reveal-stagger.is-visible > *:nth-child(7) { transition-delay: .36s; }
-
-    @keyframes riseIn {
-      from { opacity: 0; transform: translateY(26px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes liftIn {
-      from { opacity: 0; transform: translateY(34px) scale(.985); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-
-    @keyframes screenshotSheen {
-      0%, 58% { transform: translateX(-130%); }
-      78%, 100% { transform: translateX(130%); }
+    @keyframes reveal {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1082,289 +571,257 @@
       *, *::before, *::after {
         animation-duration: .001ms !important;
         animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
         transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
       }
-      .motion-ready .reveal,
-      .motion-ready .reveal-stagger > * {
+      .reveal {
         opacity: 1;
         transform: none;
       }
     }
 
-    @media (max-width: 940px) {
-      .wrap { width: min(100% - 28px, 720px); }
-      .nav { padding: 12px 0; }
-      .navlinks { display: none; }
-      .hero {
-        min-height: auto;
-        padding: 46px 0 28px;
+    @media (max-width: 960px) {
+      .repo-head {
+        display: grid;
       }
-      .hero-grid,
-      .split,
-      .quote {
+      .repo-actions {
+        justify-content: flex-start;
+      }
+      .repo-layout {
         grid-template-columns: 1fr;
       }
-      .stage { min-height: auto; }
-      .product-shot { margin: 4px 0 0; }
-      .mac-window { margin: 26px 0 0; }
-      .feature-grid,
-      .vault-flow {
-        grid-template-columns: 1fr 1fr;
+      .feature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
 
-    @media (max-width: 620px) {
-      .hero-actions,
-      .trust-row {
+    @media (max-width: 680px) {
+      .container { width: min(100% - 24px, 1180px); }
+      .topbar-inner {
+        flex-wrap: wrap;
+        padding: 10px 0;
+      }
+      .nav {
+        width: 100%;
+        margin-left: 0;
+      }
+      .hero { padding-top: 32px; }
+      .repo-actions,
+      .download-actions {
         display: grid;
-        grid-template-columns: 1fr;
       }
       .button { width: 100%; }
       .feature-grid,
-      .vault-flow,
-      .vault-panel {
+      .privacy-table {
         grid-template-columns: 1fr;
       }
-      .app-shell {
+      .readme-content {
+        padding: 18px;
+      }
+      .timeline-item {
         grid-template-columns: 1fr;
       }
-      .side { display: none; }
-      .workspace { padding: 18px; }
-      .topbar { display: grid; }
-      .float-card { position: static; margin: 12px; width: auto; }
-      h1 { font-size: 52px; }
-      .trust-row div { min-height: 64px; padding: 12px; }
-      section { padding: 72px 0; }
-      .quote { padding: 24px; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="wrap nav">
-      <a class="brand" href="#top" aria-label="密笺首页">
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="#top" aria-label="CipherNotes 首页">
         <img src="./icon.png" alt="">
-        <span>
-          <strong>密笺</strong>
-          <span>CipherNotes</span>
-        </span>
+        <span>canonliuliang / CipherNotes</span>
       </a>
-      <nav class="navlinks" aria-label="页面导航">
-        <a href="#why">为什么</a>
-        <a href="#privacy">隐私</a>
-        <a href="#vault">保险柜</a>
-        <a href="#accounts">账号</a>
-        <a href="#download">下载</a>
+      <nav class="nav" aria-label="页面导航">
+        <a href="#readme">README</a>
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#release">Releases</a>
+        <a href="https://github.com/canonliuliang/CipherNotes">GitHub</a>
       </nav>
     </div>
   </header>
 
   <main id="top">
-    <section class="hero" aria-label="密笺产品介绍">
-      <div class="wrap hero-grid">
-        <div class="hero-copy">
-          <span class="eyebrow">macOS · 本地加密 · 永久免费</span>
-          <h1>密笺 CipherNotes</h1>
-          <p class="lead">给私密笔记、照片和重要文件准备的一间本地保险室。内容只保存在这台 Mac 上，应用不上传、不追踪、不卖会员。</p>
-          <div class="hero-actions">
-            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载安装包</a>
-            <a class="button" href="#privacy">了解安全设计</a>
-          </div>
-          <div class="trust-row" aria-label="产品核心能力">
-            <div data-icon="⌘"><strong>AES-256-GCM</strong><span>笔记与文件负载本地加密</span></div>
-            <div data-icon="↯"><strong>10GB 级文件</strong><span>分片加密，后台导入不卡主界面</span></div>
-            <div data-icon="✓"><strong>本地安全日志</strong><span>事件随账户加密保存</span></div>
-          </div>
-        </div>
-
-        <div class="stage" aria-label="密笺界面示意">
-          <div class="product-shot">
-            <img src="./media/app-screenshot.png" alt="密笺真实主界面截图">
-            <div class="shot-caption">
-              <strong>真实应用界面</strong>
-              <span>演示账户 · 本地加密 · 高级数据保护</span>
+    <section class="hero">
+      <div class="container">
+        <div class="repo-head reveal">
+          <div class="repo-title">
+            <div class="repo-kicker">
+              <svg class="octicon" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2h8.7L20 6.8v12.7A2.5 2.5 0 0 1 17.5 22h-11A2.5 2.5 0 0 1 4 19.5v-15Z"/><path d="M15 2v5h5"/></svg>
+              Public repository · macOS app
+            </div>
+            <h1>密笺 CipherNotes</h1>
+            <p class="lead">A privacy-first, fully local encrypted notes app and file vault for macOS. 没有云同步、没有会员系统、没有隐藏分析脚本。</p>
+            <div class="badge-row">
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/><path d="M9.5 12.5 11.5 14.5 15 10"/></svg>AES-256-GCM</span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M4 14a7 7 0 0 1 13.5-2.5"/><path d="M20 10v5h-5"/><path d="M20 15a7 7 0 0 1-13.5 2.5"/><path d="M4 19v-5h5"/></svg>10GB class files</span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 10h8M8 14h8"/><path d="M12 7v10"/></svg>Free forever</span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Local security logs</span>
             </div>
           </div>
+          <div class="repo-actions">
+            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">
+              <svg class="octicon" viewBox="0 0 24 24"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 18.5h14"/></svg>
+              Download latest
+            </a>
+            <a class="button" href="https://github.com/canonliuliang/CipherNotes">
+              <svg class="octicon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9c0-1 .1-1.6-.5-2.2 2-.2 4.1-1 4.1-4.5A3.5 3.5 0 0 0 18.8 9c.1-.3.4-1.5-.2-3 0 0-1-.3-3.2 1.2A11 11 0 0 0 12 6.8c-1.1 0-2.2.1-3.2.4C6.6 5.7 5.6 6 5.6 6c-.6 1.5-.3 2.7-.2 3a3.5 3.5 0 0 0-.9 2.4c0 3.5 2.1 4.3 4.1 4.5-.3.3-.5.8-.5 1.5V22"/></svg>
+              View source
+            </a>
+          </div>
+        </div>
+
+        <div class="repo-layout">
+          <section class="panel screenshot-shell reveal delay-1" aria-label="应用截图">
+            <div class="window-bar">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+              <span style="margin-left:8px;color:var(--muted);font-size:13px;">CipherNotes.app</span>
+            </div>
+            <img src="./media/app-screenshot.png" alt="CipherNotes macOS app screenshot">
+          </section>
+
+          <aside class="sidebar reveal delay-2">
+            <section class="panel release-card" id="release">
+              <div class="panel-header">
+                <span>Latest release</span>
+                <a href="https://github.com/canonliuliang/CipherNotes/releases/latest">Open</a>
+              </div>
+              <div class="panel-body">
+                <div class="release-version">
+                  <svg class="octicon" viewBox="0 0 24 24"><path d="M20.6 13.2 13.2 20.6a2 2 0 0 1-2.8 0l-7-7A2 2 0 0 1 2.8 12V5A2 2 0 0 1 4.8 3h7a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.2Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+                  1.0.3
+                </div>
+                <p class="release-note">GitHub 风格官网与发布流程。下载入口始终指向 GitHub Releases latest。</p>
+                <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">Get installer</a>
+              </div>
+            </section>
+
+            <section class="panel about-card">
+              <div class="panel-header">About</div>
+              <div class="panel-body">
+                <h2>Local-first encrypted notes and file vault.</h2>
+                <ul class="sidebar-list">
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/></svg><span>Data stays on this Mac.</span></li>
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="10" rx="3"/></svg><span>Notes and vault files are encrypted before disk write.</span></li>
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M12 3v18"/></svg><span>No administrator account, no paid feature gate.</span></li>
+                </ul>
+              </div>
+            </section>
+          </aside>
         </div>
       </div>
     </section>
 
-    <section id="why" class="white reveal">
-      <div class="wrap">
-        <div class="section-head">
-          <h2>为什么选择 CipherNotes？</h2>
-          <p>它不是另一个把数据搬进云端的笔记工具，而是给本机私密资料准备的安全工作台。</p>
-        </div>
-        <div class="feature-grid reveal-stagger">
-          <article class="feature">
-            <div class="feature-icon" data-symbol="lock" aria-hidden="true"></div>
-            <h3>隐私边界更清楚</h3>
-            <p>没有远程账号、广告分析、会员系统和同步服务器。数据留在本机，备份也由你自己决定放在哪里。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="files" aria-hidden="true"></div>
-            <h3>笔记和文件一起保护</h3>
-            <p>不只加密文字。照片、PDF、压缩包、扫描件和大文件都能进入保险柜，形成一套完整的本地资料库。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="bolt" aria-hidden="true"></div>
-            <h3>面向真实大文件</h3>
-            <p>保险柜使用分片加密和后台导入，10GB 级图片或素材包也不会把主界面拖住。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="users" aria-hidden="true"></div>
-            <h3>没有万能钥匙账户</h3>
-            <p>账户之间权限平等。你可以看到本机账户列表，但只能管理当前账户，内容仍由各自密码和恢复码保护。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="free" aria-hidden="true"></div>
-            <h3>核心功能不收费</h3>
-            <p>安全中心、恢复码、Touch ID、本地备份、保险柜和大文件能力都是免费功能，没有“高级版”门槛。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="leaf" aria-hidden="true"></div>
-            <h3>离线、安静、可控</h3>
-            <p>适合证件照片、合同扫描件、项目备忘、家庭资料和不想进入网盘的个人档案。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="log" aria-hidden="true"></div>
-            <h3>安全事件看得见</h3>
-            <p>登录、锁定、Touch ID、高级保护、导入导出和危险操作会写入本地加密安全日志，且不记录正文、文件名或恢复码。</p>
-          </article>
-        </div>
+    <section class="container readme reveal delay-1" id="readme">
+      <div class="readme-title">
+        <svg class="octicon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+        README.md
       </div>
-    </section>
+      <div class="readme-content">
+        <h2 id="features">Why CipherNotes</h2>
+        <p>CipherNotes is designed for private notes, IDs, contracts, scans, family files, project archives, and anything you do not want to place into a cloud notebook or drive.</p>
+        <div class="feature-grid">
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/><path d="M9.5 12.5 11.5 14.5 15 10"/></svg>
+            <h3>Clear privacy boundary</h3>
+            <p>No remote account, no analytics, no sync server, no paid switch. Your vault file and encrypted chunks stay local.</p>
+          </article>
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><path d="M8 4h6l4 4v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M14 4v4h4"/><path d="M10 13h4M10 17h6"/></svg>
+            <h3>Notes and files together</h3>
+            <p>Keep text, photos, PDFs, archives, scans, and large private files in one encrypted local workspace.</p>
+          </article>
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 5v14M12 5v14M16 5v14"/></svg>
+            <h3>Large-file path</h3>
+            <p>Vault files use 4 MB encrypted chunks. Large imports run in the background and exports stream back to disk.</p>
+          </article>
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M17.5 15.5A5 5 0 0 1 21 20"/></svg>
+            <h3>Equal local accounts</h3>
+            <p>Accounts are visible on this Mac, but each account can only manage itself. There is no master account.</p>
+          </article>
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><path d="M4 10c2.6-2 5.2-2.7 8-1.2 2.8-1.5 5.4-.8 8 1.2-.3 5.2-3.2 8-8 8s-7.7-2.8-8-8Z"/><path d="M8 12.5h2.5M13.5 12.5H16"/></svg>
+            <h3>Advanced protection</h3>
+            <p>Hide previews, block copy/export/share paths, tighten auto-lock, and optionally configure a decoy password.</p>
+          </article>
+          <article class="feature">
+            <svg class="octicon" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/><path d="M16 16l1.5 1.5L20 15"/></svg>
+            <h3>Local security log</h3>
+            <p>Security events are encrypted with the account and avoid note bodies, filenames, passwords, and recovery codes.</p>
+          </article>
+        </div>
 
-    <section id="privacy" class="white reveal">
-      <div class="wrap">
-        <div class="section-head">
-          <h2>不是云笔记的弱化版，而是本地隐私的完整版。</h2>
-          <p>密笺把安全边界放在本机、密码、恢复码和备份上。它不需要服务器来证明自己安全，也不会把你的内容拿去换便利。</p>
-        </div>
-        <div class="feature-grid reveal-stagger">
-          <article class="feature">
-            <div class="feature-icon" data-symbol="home" aria-hidden="true"></div>
-            <h3>纯本地存储</h3>
-            <p>笔记、账号、附件索引和保险柜文件都保存在本机。没有云同步，没有远程账号，也没有隐藏的分析脚本。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="lock" aria-hidden="true"></div>
-            <h3>内容加密后落盘</h3>
-            <p>应用写入磁盘的是加密数据。即使直接打开数据文件，也不会看到明文笔记或文件内容。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="shield" aria-hidden="true"></div>
-            <h3>高级保护更克制</h3>
-            <p>开启后自动锁定收紧到 1 分钟，并阻止复制、普通导出、共享导入导出、保险柜预览、保险柜导出和敏感文件名复制。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="mask" aria-hidden="true"></div>
-            <h3>虚假密码</h3>
-            <p>可为高级保护账户设置虚假密码：输入后进入临时虚假空间，或按你的设置直接销毁本地保险库数据。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="free" aria-hidden="true"></div>
-            <h3>纯免费，无付费开关</h3>
-            <p>已经移除所有付费、授权、会员和购买逻辑。核心功能不再被“高级版”这种东西切开。</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section id="vault" class="deep-band reveal">
-      <div class="wrap">
-        <div class="section-head">
-          <h2>保险柜不是摆设。大照片库也能认真装。</h2>
-          <p>新文件使用分片加密格式。导入大文件时不把整个文件塞进内存，导出也按流式解密写回，10GB 图片或素材包不会把界面拖死。</p>
-        </div>
-        <div class="vault-flow reveal-stagger">
-          <article class="flow-step" data-icon="⛶">
-            <h3>系统授权</h3>
-            <p>通过 macOS 文件面板选择文件，按系统授予的安全访问权限读取和导出。</p>
-          </article>
-          <article class="flow-step" data-icon="◫">
-            <h3>分片加密</h3>
-            <p>每 4MB 作为一个加密块处理，避免一次性占用巨大内存。</p>
-          </article>
-          <article class="flow-step" data-icon="↯">
-            <h3>后台导入</h3>
-            <p>超过 64MB 的文件进入后台任务，主窗口继续响应搜索、编辑和切换。</p>
-          </article>
-          <article class="flow-step" data-icon="⇣">
-            <h3>流式导出</h3>
-            <p>导出时逐块解密写入目标位置，兼容旧格式附件，也照顾新版本大文件。</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section id="accounts" class="reveal">
-      <div class="wrap">
-        <div class="section-head">
-          <h2>账户平等，内容各自保护。</h2>
-          <p>密笺适合一台 Mac 上的个人、多身份或家庭场景。账户之间彼此可见但不能互相删除或读取内容。</p>
-        </div>
-        <div class="split reveal-stagger">
-          <div class="panel">
-            <h3>用户体验</h3>
-            <ul class="checklist">
-              <li>首次进入显示产品简介，应用内保留更新日志、法律说明和隐私声明。</li>
-              <li>笔记支持置顶、收藏、归档、标签、Markdown 预览和加密分享文件。</li>
-              <li>安全中心提供本地安全日志，记录登录、锁定、保护开关、导入导出和危险操作。</li>
-              <li>保险柜支持预览、筛选、复制文件名、导出和删除。</li>
-              <li>Touch ID 可作为快捷解锁入口，闲置、休眠或切换用户后自动锁定。</li>
+        <h2 id="privacy">Privacy boundary</h2>
+        <div class="privacy-table">
+          <div class="privacy-box">
+            <h3>Stored locally</h3>
+            <ul>
+              <li>Encrypted note payloads</li>
+              <li>Encrypted vault file chunks</li>
+              <li>Account display names</li>
+              <li>Encrypted local security logs</li>
+              <li>Optional local backups you create</li>
             </ul>
           </div>
-          <div class="panel">
-            <h3>管理能力</h3>
-            <ul class="checklist">
-              <li>新账户可直接创建，不再需要额外批准。</li>
-              <li>只能删除当前账户；清空全部数据需要当前账户密码和确认文字。</li>
-              <li>本地备份和还原不依赖云端，适合离线保存和迁移。</li>
-              <li>恢复码只显示一次，其他账户不会变成读取用户内容的万能钥匙。</li>
+          <div class="privacy-box">
+            <h3>Never uploaded by the app</h3>
+            <ul>
+              <li>Note titles or bodies</li>
+              <li>Photos, PDFs, archives, scans</li>
+              <li>Passwords or recovery codes</li>
+              <li>Usage analytics or ads data</li>
+              <li>Security log sensitive object names</li>
             </ul>
           </div>
         </div>
-      </div>
-    </section>
 
-    <section class="white reveal">
-      <div class="wrap">
-        <div class="feature-grid reveal-stagger">
-          <article class="feature">
-            <div class="feature-icon" data-symbol="search" aria-hidden="true"></div>
-            <h3>搜索更干净</h3>
-            <p>历史输出和构建产物不再塞进项目索引。真正要被搜索的，是源码、网站和文档。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="key" aria-hidden="true"></div>
-            <h3>权限更克制</h3>
-            <p>导入、导出、备份、还原都围绕系统文件授权做，不偷偷扩大文件访问范围。</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon" data-symbol="check" aria-hidden="true"></div>
-            <h3>测试守住核心</h3>
-            <p>加密、恢复码、多账号、账户权限、保险柜和大文件路径都有自动测试覆盖。</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section id="download" class="reveal">
-      <div class="wrap">
-        <div class="quote">
-          <div>
-            <h2>把私密资料留给自己，不留给平台。</h2>
-            <p>密笺适合保存个人笔记、证件照片、离线资料、项目备忘和不想进云端的文件。需要 macOS 14 或更高版本。</p>
-            <div class="hero-actions">
-              <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载 pkg 安装器</a>
-              <a class="button dark" href="https://github.com/canonliuliang/CipherNotes/releases/latest">下载 zip 版本</a>
-            </div>
+        <h2>Developer flow</h2>
+        <div class="terminal" aria-label="开发和打包命令">
+          <div class="terminal-head">
+            <span>release-check.sh</span>
+            <span>macOS 14+</span>
           </div>
-          <div class="release-card">
-            <strong>当前发布包 1.0.2</strong>
-            <span>虚假密码与清晰按钮 · 本地加密 · 高级数据保护</span>
+          <pre><span class="comment"># run tests</span>
+<span class="prompt">$</span> swift test --scratch-path /tmp/ciphernotes-test
+
+<span class="comment"># build installer, zip, docs and website output</span>
+<span class="prompt">$</span> Packaging/build-release.sh
+
+<span class="comment"># publish source, then attach pkg/zip to a GitHub Release</span>
+<span class="prompt">$</span> git push origin main</pre>
+        </div>
+
+        <h2>Release notes</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>1.0.3</strong>
+            <div>Rebuilt the website with a GitHub-inspired layout, clearer release guidance, and cleaner SVG iconography.</div>
+          </div>
+          <div class="timeline-item">
+            <strong>1.0.2</strong>
+            <div>Added Advanced Data Protection decoy password, fixed weak button contrast, and refreshed in-app changelog visibility.</div>
+          </div>
+          <div class="timeline-item">
+            <strong>1.0.1</strong>
+            <div>Added encrypted local security logs, privacy-protection blocking, and removed external password-manager helper prompts.</div>
+          </div>
+          <div class="timeline-item">
+            <strong>1.0.0</strong>
+            <div>Removed paid features and administrator accounts. CipherNotes became a free equal-account local vault.</div>
+          </div>
+        </div>
+
+        <div class="download-band">
+          <h2>Download</h2>
+          <p>当前发布包 1.0.3。网站下载按钮指向 GitHub Releases latest；上传源代码后，仍需要创建或更新 GitHub Release，用户才会下载到新的安装包。</p>
+          <div class="download-actions">
+            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">Download latest release</a>
+            <a class="button" href="https://github.com/canonliuliang/CipherNotes/actions">View CI</a>
+            <a class="button" href="https://github.com/canonliuliang/CipherNotes/issues">Report issue</a>
           </div>
         </div>
       </div>
@@ -1372,25 +829,7 @@
   </main>
 
   <footer>
-    <div class="wrap">密笺 CipherNotes · Local-first encrypted notes and file vault for macOS · 本地加密，隐私优先</div>
+    <div class="container">密笺 CipherNotes · Local-first encrypted notes and file vault for macOS · GitHub-inspired product page</div>
   </footer>
-  <script>
-    const animatedItems = document.querySelectorAll('.reveal, .reveal-stagger');
-    const motionAllowed = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if ('IntersectionObserver' in window && motionAllowed) {
-      document.documentElement.classList.add('motion-ready');
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-visible');
-            observer.unobserve(entry.target);
-          }
-        });
-      }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
-      animatedItems.forEach((item) => observer.observe(item));
-    } else {
-      animatedItems.forEach((item) => item.classList.add('is-visible'));
-    }
-  </script>
 </body>
 </html>

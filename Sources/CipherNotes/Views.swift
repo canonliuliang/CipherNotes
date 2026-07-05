@@ -656,6 +656,60 @@ private enum AuthMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private struct PasswordStrengthIndicator: View {
+    let password: String
+
+    private var score: Int {
+        guard !password.isEmpty else { return 0 }
+        var value = 0
+        if password.count >= 8 { value += 1 }
+        if password.count >= 12 { value += 1 }
+        if password.rangeOfCharacter(from: .uppercaseLetters) != nil { value += 1 }
+        if password.rangeOfCharacter(from: .lowercaseLetters) != nil { value += 1 }
+        if password.rangeOfCharacter(from: .decimalDigits) != nil { value += 1 }
+        if password.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) != nil { value += 1 }
+        return min(value, 5)
+    }
+
+    private var label: String {
+        switch score {
+        case 0: "输入密码后显示强度"
+        case 1...2: "偏弱，建议至少 12 位并混合字母、数字和符号"
+        case 3...4: "可用，继续增加长度会更稳"
+        default: "强度较好，请务必保存恢复码"
+        }
+    }
+
+    private var tint: Color {
+        switch score {
+        case 0: .secondary
+        case 1...2: .orange
+        case 3...4: .blue
+        default: .mint
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.16))
+                    Capsule()
+                        .fill(tint.gradient)
+                        .frame(width: max(8, proxy.size.width * CGFloat(score) / 5))
+                }
+            }
+            .frame(height: 6)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(tint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("密码强度：\(label)")
+    }
+}
+
 struct UnlockView: View {
     @EnvironmentObject private var store: VaultStore
     @AppStorage("reduceMotion") private var reduceMotion = false
@@ -824,6 +878,7 @@ struct UnlockView: View {
             SecureField("再次输入用户密码", text: $confirmation)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(register)
+            PasswordStrengthIndicator(password: password)
             if store.biometricsAvailable {
                 Toggle("注册后启用 Touch ID", isOn: $enableTouchID)
                 Text("Touch ID 是设备级验证；如果这台 Mac 有多人录入指纹，请不要为隐私账户启用。")
@@ -852,6 +907,7 @@ struct UnlockView: View {
             SecureField("再次输入新用户密码", text: $confirmation)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(resetPassword)
+            PasswordStrengthIndicator(password: password)
             Button("用恢复码重设密码", action: resetPassword)
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .frame(maxWidth: .infinity)
@@ -2501,7 +2557,7 @@ struct UserManagementView: View {
             }
             .padding(24)
         }
-        .frame(width: 600, height: 620)
+        .frame(minWidth: 560, idealWidth: 620, minHeight: 620, idealHeight: 660)
     }
 
     private var passwordSection: some View {
@@ -2514,6 +2570,7 @@ struct UserManagementView: View {
                 .textFieldStyle(.roundedBorder)
             SecureField("再次输入新账户密码", text: $passwordConfirmation)
                 .textFieldStyle(.roundedBorder)
+            PasswordStrengthIndicator(password: passwordNew)
             HStack {
                 Spacer()
                 Button("更新密码") {
@@ -2655,6 +2712,18 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.3",
+            version: "1.0.3",
+            title: "GitHub 风格官网与发布流程",
+            dateText: "2026-07-05",
+            items: [
+                "官网改为更接近 GitHub 项目首页的布局：仓库标题、Release 卡片、README 内容区、隐私边界和开发流程更清晰。",
+                "官网图标换成统一线宽的 SVG 图标，移除粗糙字符图标和旧的 CSS 假图标。",
+                "下载入口继续统一指向 GitHub Releases latest，并明确说明 push 源码不等于更新公开下载包。",
+                "README、官网、Pages 和本地产品介绍页同步 1.0.3 版本说明。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.2",
             version: "1.0.2",

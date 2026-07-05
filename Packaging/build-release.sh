@@ -35,6 +35,7 @@ codesign --force --sign - "$APP_PATH"
 mkdir -p "$OUTPUTS_DIR"
 
 cp "$ROOT_DIR/README.md" "$OUTPUTS_DIR/使用说明.md"
+cp "$ROOT_DIR/Packaging/RELEASE_NOTES.md" "$OUTPUTS_DIR/发布说明.md"
 cp "$ROOT_DIR/Assets/AppIcon-1024.png" "$OUTPUTS_DIR/密笺图标.png"
 cp "$ROOT_DIR/Website/index.html" "$ROOT_DIR/docs/index.html"
 sed 's|../outputs/密笺安装器.pkg|密笺安装器.pkg|g; s|../outputs/密笺-macOS.zip|密笺-macOS.zip|g' "$ROOT_DIR/Website/index.html" > "$OUTPUTS_DIR/产品介绍.html"
