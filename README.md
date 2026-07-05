@@ -112,7 +112,17 @@ The script runs tests, builds the release app, and updates:
 
 The repository avoids keeping an expanded `.app` bundle in `outputs` to reduce Spotlight and Git noise. Unzip the release archive when you need the app bundle.
 
-Pushing source code to GitHub does not update what users download from the website. The website download button points to GitHub Releases latest, so a new public download requires a new GitHub Release, or updating the latest Release assets with the newly built `pkg` and `zip`.
+Pushing source code to GitHub updates the repository and GitHub Pages, but it does not update what users download from the website by itself. The website download button points to GitHub Releases latest.
+
+To publish a new public download:
+
+```sh
+git push origin main
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+The `Release` workflow validates the version, runs the package script, creates or updates the GitHub Release, and uploads the generated `pkg`, `zip`, release notes, usage guide, website output, and icon.
 
 ## Upgrade From Older Vaults
 

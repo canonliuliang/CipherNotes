@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build and publish release
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Validate tag and release metadata
+        run: |
+          set -euo pipefail
+          source Packaging/release.env
+          expected_tag="v${CIPHERNOTES_VERSION}"
+          if [ "${GITHUB_REF_NAME}" != "${expected_tag}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match Packaging/release.env version ${expected_tag}" >&2
+            exit 1
+          fi
+          grep -q "Current release: \`${CIPHERNOTES_VERSION}\`" README.md
+          grep -q "当前发布包 ${CIPHERNOTES_VERSION}" Website/index.html
+          grep -q "version: \"${CIPHERNOTES_VERSION}\"" Sources/CipherNotes/Views.swift
+
+      - name: Build installer and archive
+        run: Packaging/build-release.sh
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CipherNotes-${{ github.ref_name }}
+          path: |
+            outputs/密笺安装器.pkg
+            outputs/密笺-macOS.zip
+            outputs/发布说明.md
+            outputs/使用说明.md
+            outputs/产品介绍.html
+            outputs/密笺图标.png
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source Packaging/release.env
+          title="CipherNotes ${CIPHERNOTES_VERSION} - ${CIPHERNOTES_RELEASE_NAME}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "${title}" \
+              --notes-file Packaging/RELEASE_NOTES.md \
+              --latest
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${title}" \
+              --notes-file Packaging/RELEASE_NOTES.md \
+              --latest
+          fi
+          gh release upload "${GITHUB_REF_NAME}" \
+            outputs/密笺安装器.pkg \
+            outputs/密笺-macOS.zip \
+            outputs/发布说明.md \
+            outputs/使用说明.md \
+            outputs/产品介绍.html \
+            outputs/密笺图标.png \
+            --clobber
