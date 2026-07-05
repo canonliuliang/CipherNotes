@@ -65,7 +65,10 @@
       align-items: center;
       gap: 12px;
       min-width: 0;
+      transition: transform .22s ease;
     }
+
+    .brand:hover { transform: translateY(-1px); }
 
     .brand img,
     .app-icon {
@@ -73,6 +76,12 @@
       height: 38px;
       border-radius: 9px;
       box-shadow: 0 8px 20px rgba(0, 113, 227, .16);
+      transition: transform .28s ease, box-shadow .28s ease;
+    }
+
+    .brand:hover img {
+      transform: scale(1.045);
+      box-shadow: 0 12px 26px rgba(0, 113, 227, .24);
     }
 
     .brand strong {
@@ -119,12 +128,17 @@
       color: var(--ink);
       font-weight: 650;
       white-space: nowrap;
-      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
     }
 
     .button:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 24px rgba(0, 0, 0, .08);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, .10);
+      border-color: rgba(0, 113, 227, .30);
+    }
+
+    .button:active {
+      transform: translateY(0) scale(.985);
     }
 
     .button.primary {
@@ -163,6 +177,7 @@
     .hero-copy {
       position: relative;
       z-index: 2;
+      animation: riseIn .78s cubic-bezier(.2, .8, .2, 1) both;
     }
 
     .eyebrow {
@@ -214,6 +229,7 @@
 
     .trust-row div {
       position: relative;
+      overflow: hidden;
       min-height: 86px;
       padding: 16px 14px;
       border: 1px solid rgba(0, 0, 0, .06);
@@ -221,7 +237,26 @@
       background: rgba(255, 255, 255, .68);
       box-shadow: 0 12px 34px rgba(0, 0, 0, .04);
       backdrop-filter: blur(18px);
+      transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
     }
+
+    .trust-row div:hover {
+      transform: translateY(-4px);
+      border-color: rgba(0, 113, 227, .18);
+      box-shadow: 0 18px 46px rgba(0, 0, 0, .075);
+    }
+
+    .trust-row div::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-130%);
+      background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, .46), transparent 68%);
+      transition: transform .7s ease;
+      pointer-events: none;
+    }
+
+    .trust-row div:hover::after { transform: translateX(130%); }
 
     .trust-row div::before {
       content: attr(data-icon);
@@ -258,6 +293,8 @@
     }
 
     .product-shot {
+      position: relative;
+      overflow: hidden;
       width: min(1000px, 100%);
       margin: 0 auto;
       padding: 12px;
@@ -266,6 +303,23 @@
       background: rgba(255, 255, 255, .72);
       box-shadow: var(--shadow);
       backdrop-filter: blur(20px);
+      animation: liftIn .88s cubic-bezier(.2, .8, .2, 1) .12s both;
+      transition: transform .32s ease, box-shadow .32s ease;
+    }
+
+    .product-shot:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 44px 110px rgba(0, 0, 0, .18);
+    }
+
+    .product-shot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-130%);
+      background: linear-gradient(105deg, transparent 36%, rgba(255,255,255,.32), transparent 64%);
+      animation: screenshotSheen 4.8s ease-in-out 1.2s infinite;
+      pointer-events: none;
     }
 
     .product-shot img {
@@ -514,6 +568,18 @@
       border-radius: 22px;
       background: var(--paper);
       box-shadow: 0 18px 42px rgba(0, 0, 0, .045);
+      transition: transform .26s ease, box-shadow .26s ease, border-color .26s ease;
+      will-change: transform;
+    }
+
+    .feature:hover {
+      transform: translateY(-6px);
+      border-color: rgba(0, 113, 227, .14);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, .075);
+    }
+
+    .feature:hover .feature-icon {
+      transform: translateY(-2px) scale(1.045);
     }
 
     .feature::after {
@@ -542,6 +608,7 @@
         linear-gradient(145deg, #0071e3 0%, #00a7b5 100%);
       box-shadow: 0 16px 34px rgba(0, 113, 227, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
       font-size: 0;
+      transition: transform .26s ease, box-shadow .26s ease;
     }
 
     .feature:nth-child(2) .feature-icon,
@@ -801,6 +868,17 @@
       border-radius: 22px;
       background: rgba(255, 255, 255, .07);
       backdrop-filter: blur(18px);
+      transition: transform .26s ease, border-color .26s ease, background .26s ease;
+    }
+
+    .flow-step:hover {
+      transform: translateY(-6px);
+      border-color: rgba(116, 215, 201, .42);
+      background: rgba(255, 255, 255, .10);
+    }
+
+    .flow-step:hover::after {
+      transform: rotate(4deg) scale(1.06);
     }
 
     .flow-step::after {
@@ -819,6 +897,7 @@
       box-shadow: 0 14px 32px rgba(0, 113, 227, .28);
       font-size: 20px;
       font-weight: 800;
+      transition: transform .26s ease;
     }
 
     .flow-step::before {
@@ -859,6 +938,12 @@
       border-radius: 22px;
       background: var(--paper);
       box-shadow: 0 14px 34px rgba(0, 0, 0, .045);
+      transition: transform .24s ease, box-shadow .24s ease;
+    }
+
+    .panel:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 22px 54px rgba(0, 0, 0, .07);
     }
 
     .panel h3 {
@@ -902,6 +987,12 @@
       border-radius: 26px;
       background: var(--paper);
       box-shadow: var(--small-shadow);
+      transition: transform .26s ease, box-shadow .26s ease;
+    }
+
+    .quote:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .10);
     }
 
     .quote h2 {
@@ -940,6 +1031,65 @@
       color: var(--muted);
       background: #fff;
       font-size: 13px;
+    }
+
+    .motion-ready .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity .7s ease, transform .7s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .motion-ready .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .motion-ready .reveal-stagger > * {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity .62s ease, transform .62s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .motion-ready .reveal-stagger.is-visible > * {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(2) { transition-delay: .06s; }
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(3) { transition-delay: .12s; }
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(4) { transition-delay: .18s; }
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(5) { transition-delay: .24s; }
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(6) { transition-delay: .30s; }
+    .motion-ready .reveal-stagger.is-visible > *:nth-child(7) { transition-delay: .36s; }
+
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(26px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes liftIn {
+      from { opacity: 0; transform: translateY(34px) scale(.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes screenshotSheen {
+      0%, 58% { transform: translateX(-130%); }
+      78%, 100% { transform: translateX(130%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .001ms !important;
+      }
+      .motion-ready .reveal,
+      .motion-ready .reveal-stagger > * {
+        opacity: 1;
+        transform: none;
+      }
     }
 
     @media (max-width: 940px) {
@@ -1040,13 +1190,13 @@
       </div>
     </section>
 
-    <section id="why" class="white">
+    <section id="why" class="white reveal">
       <div class="wrap">
         <div class="section-head">
           <h2>为什么选择 CipherNotes？</h2>
           <p>它不是另一个把数据搬进云端的笔记工具，而是给本机私密资料准备的安全工作台。</p>
         </div>
-        <div class="feature-grid">
+        <div class="feature-grid reveal-stagger">
           <article class="feature">
             <div class="feature-icon" data-symbol="lock" aria-hidden="true"></div>
             <h3>隐私边界更清楚</h3>
@@ -1086,13 +1236,13 @@
       </div>
     </section>
 
-    <section id="privacy" class="white">
+    <section id="privacy" class="white reveal">
       <div class="wrap">
         <div class="section-head">
           <h2>不是云笔记的弱化版，而是本地隐私的完整版。</h2>
           <p>密笺把安全边界放在本机、密码、恢复码和备份上。它不需要服务器来证明自己安全，也不会把你的内容拿去换便利。</p>
         </div>
-        <div class="feature-grid">
+        <div class="feature-grid reveal-stagger">
           <article class="feature">
             <div class="feature-icon" data-symbol="home" aria-hidden="true"></div>
             <h3>纯本地存储</h3>
@@ -1122,13 +1272,13 @@
       </div>
     </section>
 
-    <section id="vault" class="deep-band">
+    <section id="vault" class="deep-band reveal">
       <div class="wrap">
         <div class="section-head">
           <h2>保险柜不是摆设。大照片库也能认真装。</h2>
           <p>新文件使用分片加密格式。导入大文件时不把整个文件塞进内存，导出也按流式解密写回，10GB 图片或素材包不会把界面拖死。</p>
         </div>
-        <div class="vault-flow">
+        <div class="vault-flow reveal-stagger">
           <article class="flow-step" data-icon="⛶">
             <h3>系统授权</h3>
             <p>通过 macOS 文件面板选择文件，按系统授予的安全访问权限读取和导出。</p>
@@ -1149,13 +1299,13 @@
       </div>
     </section>
 
-    <section id="accounts">
+    <section id="accounts" class="reveal">
       <div class="wrap">
         <div class="section-head">
           <h2>账户平等，内容各自保护。</h2>
           <p>密笺适合一台 Mac 上的个人、多身份或家庭场景。账户之间彼此可见但不能互相删除或读取内容。</p>
         </div>
-        <div class="split">
+        <div class="split reveal-stagger">
           <div class="panel">
             <h3>用户体验</h3>
             <ul class="checklist">
@@ -1179,9 +1329,9 @@
       </div>
     </section>
 
-    <section class="white">
+    <section class="white reveal">
       <div class="wrap">
-        <div class="feature-grid">
+        <div class="feature-grid reveal-stagger">
           <article class="feature">
             <div class="feature-icon" data-symbol="search" aria-hidden="true"></div>
             <h3>搜索更干净</h3>
@@ -1201,7 +1351,7 @@
       </div>
     </section>
 
-    <section id="download">
+    <section id="download" class="reveal">
       <div class="wrap">
         <div class="quote">
           <div>
@@ -1224,5 +1374,23 @@
   <footer>
     <div class="wrap">密笺 CipherNotes · Local-first encrypted notes and file vault for macOS · 本地加密，隐私优先</div>
   </footer>
+  <script>
+    const animatedItems = document.querySelectorAll('.reveal, .reveal-stagger');
+    const motionAllowed = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if ('IntersectionObserver' in window && motionAllowed) {
+      document.documentElement.classList.add('motion-ready');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
+      animatedItems.forEach((item) => observer.observe(item));
+    } else {
+      animatedItems.forEach((item) => item.classList.add('is-visible'));
+    }
+  </script>
 </body>
 </html>
