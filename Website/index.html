@@ -213,6 +213,7 @@
     }
 
     .trust-row div {
+      position: relative;
       min-height: 86px;
       padding: 16px 14px;
       border: 1px solid rgba(0, 0, 0, .06);
@@ -220,6 +221,21 @@
       background: rgba(255, 255, 255, .68);
       box-shadow: 0 12px 34px rgba(0, 0, 0, .04);
       backdrop-filter: blur(18px);
+    }
+
+    .trust-row div::before {
+      content: attr(data-icon);
+      width: 26px;
+      height: 26px;
+      display: inline-grid;
+      place-items: center;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      color: #fff;
+      background: linear-gradient(135deg, #0071e3, #00a7b5);
+      box-shadow: 0 10px 22px rgba(0, 113, 227, .20);
+      font-size: 15px;
+      font-weight: 800;
     }
 
     .trust-row strong {
@@ -490,6 +506,8 @@
     }
 
     .feature {
+      position: relative;
+      overflow: hidden;
       min-height: 250px;
       padding: 28px;
       border: 1px solid rgba(0, 0, 0, .06);
@@ -498,23 +516,252 @@
       box-shadow: 0 18px 42px rgba(0, 0, 0, .045);
     }
 
+    .feature::after {
+      content: "";
+      position: absolute;
+      inset: auto -28px -52px auto;
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 113, 227, .10), rgba(0, 113, 227, 0) 66%);
+      pointer-events: none;
+    }
+
     .feature-icon {
-      width: 48px;
-      height: 48px;
+      position: relative;
+      width: 54px;
+      height: 54px;
       display: grid;
       place-items: center;
       margin-bottom: 22px;
-      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, .78);
+      border-radius: 16px;
       color: #fff;
-      background: var(--blue);
-      font-weight: 850;
+      background:
+        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(145deg, #0071e3 0%, #00a7b5 100%);
+      box-shadow: 0 16px 34px rgba(0, 113, 227, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
+      font-size: 0;
     }
 
     .feature:nth-child(2) .feature-icon,
-    .feature:nth-child(5) .feature-icon { background: var(--cyan); }
+    .feature:nth-child(5) .feature-icon {
+      background:
+        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(145deg, #00a7b5 0%, #30d158 100%);
+      box-shadow: 0 16px 34px rgba(0, 167, 181, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
+    }
 
     .feature:nth-child(3) .feature-icon,
-    .feature:nth-child(6) .feature-icon { background: var(--green); }
+    .feature:nth-child(6) .feature-icon {
+      background:
+        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .52), rgba(255, 255, 255, 0) 34%),
+        linear-gradient(145deg, #248a3d 0%, #64d2ff 100%);
+      box-shadow: 0 16px 34px rgba(36, 138, 61, .20), inset 0 1px 0 rgba(255, 255, 255, .48);
+    }
+
+    .feature-icon::before,
+    .feature-icon::after {
+      content: "";
+      position: absolute;
+      box-sizing: border-box;
+      border-color: currentColor;
+    }
+
+    .feature-icon::before {
+      width: 26px;
+      height: 26px;
+      border: 2px solid currentColor;
+      border-radius: 8px;
+    }
+
+    .feature-icon::after {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .feature-icon[data-symbol="lock"]::before {
+      width: 25px;
+      height: 20px;
+      top: 26px;
+      border-radius: 7px;
+    }
+
+    .feature-icon[data-symbol="lock"]::after {
+      width: 18px;
+      height: 16px;
+      top: 14px;
+      border: 2px solid currentColor;
+      border-bottom: 0;
+      border-radius: 12px 12px 0 0;
+      background: transparent;
+    }
+
+    .feature-icon[data-symbol="files"]::before {
+      width: 24px;
+      height: 28px;
+      transform: translate(4px, 2px);
+      border-radius: 6px;
+    }
+
+    .feature-icon[data-symbol="files"]::after {
+      width: 24px;
+      height: 28px;
+      transform: translate(-4px, -2px);
+      border: 2px solid currentColor;
+      border-radius: 6px;
+      background: transparent;
+    }
+
+    .feature-icon[data-symbol="bolt"]::before {
+      width: 16px;
+      height: 30px;
+      border: 0;
+      border-radius: 0;
+      background: currentColor;
+      clip-path: polygon(55% 0, 12% 52%, 46% 52%, 35% 100%, 88% 40%, 54% 40%);
+    }
+
+    .feature-icon[data-symbol="bolt"]::after { display: none; }
+
+    .feature-icon[data-symbol="users"]::before {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      transform: translate(-7px, -7px);
+    }
+
+    .feature-icon[data-symbol="users"]::after {
+      width: 22px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-radius: 12px 12px 5px 5px;
+      background: transparent;
+      transform: translate(5px, 8px);
+    }
+
+    .feature-icon[data-symbol="free"]::before {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+    }
+
+    .feature-icon[data-symbol="free"]::after {
+      width: 14px;
+      height: 2px;
+      border-radius: 2px;
+      box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
+    }
+
+    .feature-icon[data-symbol="leaf"]::before {
+      width: 28px;
+      height: 20px;
+      border-radius: 18px 18px 18px 3px;
+      transform: rotate(-24deg);
+    }
+
+    .feature-icon[data-symbol="leaf"]::after {
+      width: 18px;
+      height: 2px;
+      border-radius: 2px;
+      transform: rotate(-24deg);
+    }
+
+    .feature-icon[data-symbol="log"]::before {
+      width: 26px;
+      height: 30px;
+      border-radius: 7px;
+    }
+
+    .feature-icon[data-symbol="log"]::after {
+      width: 15px;
+      height: 2px;
+      border-radius: 2px;
+      box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
+    }
+
+    .feature-icon[data-symbol="home"]::before {
+      width: 27px;
+      height: 22px;
+      border-radius: 5px;
+      transform: translateY(5px);
+    }
+
+    .feature-icon[data-symbol="home"]::after {
+      width: 22px;
+      height: 22px;
+      border: 2px solid currentColor;
+      border-right: 0;
+      border-bottom: 0;
+      border-radius: 3px;
+      background: transparent;
+      transform: translateY(-7px) rotate(45deg);
+    }
+
+    .feature-icon[data-symbol="shield"]::before {
+      width: 28px;
+      height: 32px;
+      border-radius: 14px 14px 16px 16px;
+      clip-path: polygon(50% 0, 100% 18%, 88% 76%, 50% 100%, 12% 76%, 0 18%);
+    }
+
+    .feature-icon[data-symbol="shield"]::after { display: none; }
+
+    .feature-icon[data-symbol="mask"]::before {
+      width: 31px;
+      height: 22px;
+      border-radius: 50% 50% 12px 12px;
+    }
+
+    .feature-icon[data-symbol="mask"]::after {
+      width: 5px;
+      height: 5px;
+      box-shadow: 13px 0 0 currentColor;
+      transform: translate(-7px, -1px);
+    }
+
+    .feature-icon[data-symbol="search"]::before {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      transform: translate(-4px, -4px);
+    }
+
+    .feature-icon[data-symbol="search"]::after {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+      transform: translate(10px, 10px) rotate(45deg);
+    }
+
+    .feature-icon[data-symbol="key"]::before {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      transform: translate(-8px, 0);
+    }
+
+    .feature-icon[data-symbol="key"]::after {
+      width: 23px;
+      height: 3px;
+      border-radius: 3px;
+      box-shadow: 9px 6px 0 -1px currentColor;
+      transform: translate(8px, 0);
+    }
+
+    .feature-icon[data-symbol="check"]::before {
+      width: 27px;
+      height: 16px;
+      border: 0;
+      border-left: 4px solid currentColor;
+      border-bottom: 4px solid currentColor;
+      border-radius: 0;
+      transform: rotate(-45deg) translate(1px, -2px);
+    }
+
+    .feature-icon[data-symbol="check"]::after { display: none; }
 
     .feature h3 {
       margin: 0 0 9px;
@@ -546,6 +793,8 @@
     }
 
     .flow-step {
+      position: relative;
+      overflow: hidden;
       min-height: 220px;
       padding: 22px;
       border: 1px solid rgba(255, 255, 255, .18);
@@ -554,12 +803,36 @@
       backdrop-filter: blur(18px);
     }
 
+    .flow-step::after {
+      content: attr(data-icon);
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 14px;
+      color: #fff;
+      background: linear-gradient(145deg, rgba(0, 113, 227, .72), rgba(0, 167, 181, .58));
+      box-shadow: 0 14px 32px rgba(0, 113, 227, .28);
+      font-size: 20px;
+      font-weight: 800;
+    }
+
     .flow-step::before {
       counter-increment: step;
       content: "0" counter(step);
-      display: block;
+      display: inline-grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
       margin-bottom: 22px;
-      color: #74d7c9;
+      border-radius: 50%;
+      color: #061116;
+      background: #74d7c9;
+      box-shadow: 0 12px 26px rgba(116, 215, 201, .25);
       font-weight: 850;
     }
 
@@ -749,9 +1022,9 @@
             <a class="button" href="#privacy">了解安全设计</a>
           </div>
           <div class="trust-row" aria-label="产品核心能力">
-            <div><strong>AES-256-GCM</strong><span>笔记与文件负载本地加密</span></div>
-            <div><strong>10GB 级文件</strong><span>分片加密，后台导入不卡主界面</span></div>
-            <div><strong>本地安全日志</strong><span>事件随账户加密保存</span></div>
+            <div data-icon="⌘"><strong>AES-256-GCM</strong><span>笔记与文件负载本地加密</span></div>
+            <div data-icon="↯"><strong>10GB 级文件</strong><span>分片加密，后台导入不卡主界面</span></div>
+            <div data-icon="✓"><strong>本地安全日志</strong><span>事件随账户加密保存</span></div>
           </div>
         </div>
 
@@ -775,37 +1048,37 @@
         </div>
         <div class="feature-grid">
           <article class="feature">
-            <div class="feature-icon">私</div>
+            <div class="feature-icon" data-symbol="lock" aria-hidden="true"></div>
             <h3>隐私边界更清楚</h3>
             <p>没有远程账号、广告分析、会员系统和同步服务器。数据留在本机，备份也由你自己决定放在哪里。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">全</div>
+            <div class="feature-icon" data-symbol="files" aria-hidden="true"></div>
             <h3>笔记和文件一起保护</h3>
             <p>不只加密文字。照片、PDF、压缩包、扫描件和大文件都能进入保险柜，形成一套完整的本地资料库。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">稳</div>
+            <div class="feature-icon" data-symbol="bolt" aria-hidden="true"></div>
             <h3>面向真实大文件</h3>
             <p>保险柜使用分片加密和后台导入，10GB 级图片或素材包也不会把主界面拖住。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">权</div>
+            <div class="feature-icon" data-symbol="users" aria-hidden="true"></div>
             <h3>没有万能钥匙账户</h3>
             <p>账户之间权限平等。你可以看到本机账户列表，但只能管理当前账户，内容仍由各自密码和恢复码保护。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">免</div>
+            <div class="feature-icon" data-symbol="free" aria-hidden="true"></div>
             <h3>核心功能不收费</h3>
             <p>安全中心、恢复码、Touch ID、本地备份、保险柜和大文件能力都是免费功能，没有“高级版”门槛。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">净</div>
+            <div class="feature-icon" data-symbol="leaf" aria-hidden="true"></div>
             <h3>离线、安静、可控</h3>
             <p>适合证件照片、合同扫描件、项目备忘、家庭资料和不想进入网盘的个人档案。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">志</div>
+            <div class="feature-icon" data-symbol="log" aria-hidden="true"></div>
             <h3>安全事件看得见</h3>
             <p>登录、锁定、Touch ID、高级保护、导入导出和危险操作会写入本地加密安全日志，且不记录正文、文件名或恢复码。</p>
           </article>
@@ -821,27 +1094,27 @@
         </div>
         <div class="feature-grid">
           <article class="feature">
-            <div class="feature-icon">本</div>
+            <div class="feature-icon" data-symbol="home" aria-hidden="true"></div>
             <h3>纯本地存储</h3>
             <p>笔记、账号、附件索引和保险柜文件都保存在本机。没有云同步，没有远程账号，也没有隐藏的分析脚本。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">密</div>
+            <div class="feature-icon" data-symbol="lock" aria-hidden="true"></div>
             <h3>内容加密后落盘</h3>
             <p>应用写入磁盘的是加密数据。即使直接打开数据文件，也不会看到明文笔记或文件内容。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">护</div>
+            <div class="feature-icon" data-symbol="shield" aria-hidden="true"></div>
             <h3>高级保护更克制</h3>
             <p>开启后自动锁定收紧到 1 分钟，并阻止复制、普通导出、共享导入导出、保险柜预览、保险柜导出和敏感文件名复制。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">假</div>
+            <div class="feature-icon" data-symbol="mask" aria-hidden="true"></div>
             <h3>虚假密码</h3>
             <p>可为高级保护账户设置虚假密码：输入后进入临时虚假空间，或按你的设置直接销毁本地保险库数据。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">免</div>
+            <div class="feature-icon" data-symbol="free" aria-hidden="true"></div>
             <h3>纯免费，无付费开关</h3>
             <p>已经移除所有付费、授权、会员和购买逻辑。核心功能不再被“高级版”这种东西切开。</p>
           </article>
@@ -856,19 +1129,19 @@
           <p>新文件使用分片加密格式。导入大文件时不把整个文件塞进内存，导出也按流式解密写回，10GB 图片或素材包不会把界面拖死。</p>
         </div>
         <div class="vault-flow">
-          <article class="flow-step">
+          <article class="flow-step" data-icon="⛶">
             <h3>系统授权</h3>
             <p>通过 macOS 文件面板选择文件，按系统授予的安全访问权限读取和导出。</p>
           </article>
-          <article class="flow-step">
+          <article class="flow-step" data-icon="◫">
             <h3>分片加密</h3>
             <p>每 4MB 作为一个加密块处理，避免一次性占用巨大内存。</p>
           </article>
-          <article class="flow-step">
+          <article class="flow-step" data-icon="↯">
             <h3>后台导入</h3>
             <p>超过 64MB 的文件进入后台任务，主窗口继续响应搜索、编辑和切换。</p>
           </article>
-          <article class="flow-step">
+          <article class="flow-step" data-icon="⇣">
             <h3>流式导出</h3>
             <p>导出时逐块解密写入目标位置，兼容旧格式附件，也照顾新版本大文件。</p>
           </article>
@@ -910,17 +1183,17 @@
       <div class="wrap">
         <div class="feature-grid">
           <article class="feature">
-            <div class="feature-icon">搜</div>
+            <div class="feature-icon" data-symbol="search" aria-hidden="true"></div>
             <h3>搜索更干净</h3>
             <p>历史输出和构建产物不再塞进项目索引。真正要被搜索的，是源码、网站和文档。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">权</div>
+            <div class="feature-icon" data-symbol="key" aria-hidden="true"></div>
             <h3>权限更克制</h3>
             <p>导入、导出、备份、还原都围绕系统文件授权做，不偷偷扩大文件访问范围。</p>
           </article>
           <article class="feature">
-            <div class="feature-icon">稳</div>
+            <div class="feature-icon" data-symbol="check" aria-hidden="true"></div>
             <h3>测试守住核心</h3>
             <p>加密、恢复码、多账号、账户权限、保险柜和大文件路径都有自动测试覆盖。</p>
           </article>
