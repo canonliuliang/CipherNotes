@@ -2,7 +2,7 @@
 
 ## Summary
 
-CipherNotes 1.0.4 improves everyday safety and polish around destructive actions. The Account & Security danger zone now makes delete-account and erase-all-data confirmations explicit, and key security sheets use more flexible sizing.
+CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. Version 1.0.4 sharpens the product feel around destructive actions and window ergonomics so the app reads less like a utility build and more like a finished product.
 
 ## What's Changed
 
