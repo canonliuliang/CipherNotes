@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en" data-lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>密笺 CipherNotes - Local-first encrypted notes for macOS</title>
-  <meta name="description" content="CipherNotes 是隐私优先、完全本地的 macOS 加密记事本与文件保险柜。">
+  <title>CipherNotes - Local-first encrypted notes for macOS</title>
+  <meta name="description" content="CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS.">
   <style>
     :root {
       color-scheme: light dark;
@@ -147,6 +147,33 @@
       color: var(--fg);
       background: color-mix(in srgb, var(--border-muted) 60%, transparent);
       text-decoration: none;
+    }
+
+    .lang-switch {
+      display: inline-flex;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--canvas-subtle);
+      box-shadow: 0 1px 0 rgba(31, 35, 40, .04);
+    }
+
+    .lang-switch button {
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .lang-switch button[aria-pressed="true"] {
+      background: var(--accent);
+      color: #fff;
     }
 
     .button {
@@ -526,6 +553,11 @@
       color: var(--accent);
     }
 
+    [data-lang="zh-CN"] [data-en],
+    [data-lang="en"] [data-zh] {
+      display: none !important;
+    }
+
     .download-band {
       margin-top: 18px;
       padding: 18px;
@@ -638,6 +670,10 @@
         <a href="#release">Releases</a>
         <a href="https://github.com/canonliuliang/CipherNotes">GitHub</a>
       </nav>
+      <div class="lang-switch" aria-label="Language switch">
+        <button type="button" data-lang-button="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang-button="zh-CN" aria-pressed="false">中文</button>
+      </div>
     </div>
   </header>
 
@@ -648,25 +684,31 @@
           <div class="repo-title">
             <div class="repo-kicker">
               <svg class="octicon" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2h8.7L20 6.8v12.7A2.5 2.5 0 0 1 17.5 22h-11A2.5 2.5 0 0 1 4 19.5v-15Z"/><path d="M15 2v5h5"/></svg>
-              Public repository · macOS app
+              <span data-en>Public repository · macOS app</span>
+              <span data-zh>公开仓库 · macOS 应用</span>
             </div>
-            <h1>密笺 CipherNotes</h1>
-            <p class="lead">A privacy-first, fully local encrypted notes app and file vault for macOS. 没有云同步、没有会员系统、没有隐藏分析脚本。</p>
+            <h1>CipherNotes</h1>
+            <p class="lead">
+              <span data-en>A privacy-first, fully local encrypted notes app and file vault for macOS. No cloud sync, no membership system, no hidden analytics.</span>
+              <span data-zh>一款隐私优先、完全本地的 macOS 加密记事本与文件保险柜。没有云同步、没有会员系统、没有隐藏分析脚本。</span>
+            </p>
             <div class="badge-row">
-              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/><path d="M9.5 12.5 11.5 14.5 15 10"/></svg>AES-256-GCM</span>
-              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M4 14a7 7 0 0 1 13.5-2.5"/><path d="M20 10v5h-5"/><path d="M20 15a7 7 0 0 1-13.5 2.5"/><path d="M4 19v-5h5"/></svg>10GB class files</span>
-              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 10h8M8 14h8"/><path d="M12 7v10"/></svg>Free forever</span>
-              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Local security logs</span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/><path d="M9.5 12.5 11.5 14.5 15 10"/></svg><span data-en>AES-256-GCM</span><span data-zh>AES-256-GCM</span></span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><path d="M4 14a7 7 0 0 1 13.5-2.5"/><path d="M20 10v5h-5"/><path d="M20 15a7 7 0 0 1-13.5 2.5"/><path d="M4 19v-5h5"/></svg><span data-en>10GB-class files</span><span data-zh>10GB 级文件</span></span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 10h8M8 14h8"/><path d="M12 7v10"/></svg><span data-en>Free forever</span><span data-zh>永久免费</span></span>
+              <span class="badge"><svg class="octicon" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span data-en>Local security logs</span><span data-zh>本地安全日志</span></span>
             </div>
           </div>
           <div class="repo-actions">
             <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">
               <svg class="octicon" viewBox="0 0 24 24"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 18.5h14"/></svg>
-              Download latest
+              <span data-en>Download latest</span>
+              <span data-zh>下载最新版</span>
             </a>
             <a class="button" href="https://github.com/canonliuliang/CipherNotes">
               <svg class="octicon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9c0-1 .1-1.6-.5-2.2 2-.2 4.1-1 4.1-4.5A3.5 3.5 0 0 0 18.8 9c.1-.3.4-1.5-.2-3 0 0-1-.3-3.2 1.2A11 11 0 0 0 12 6.8c-1.1 0-2.2.1-3.2.4C6.6 5.7 5.6 6 5.6 6c-.6 1.5-.3 2.7-.2 3a3.5 3.5 0 0 0-.9 2.4c0 3.5 2.1 4.3 4.1 4.5-.3.3-.5.8-.5 1.5V22"/></svg>
-              View source
+              <span data-en>View source</span>
+              <span data-zh>查看源码</span>
             </a>
           </div>
         </div>
@@ -685,7 +727,8 @@
           <aside class="sidebar reveal delay-2">
             <section class="panel release-card" id="release">
               <div class="panel-header">
-                <span>Latest release</span>
+                <span data-en>Latest release</span>
+                <span data-zh>最新发布</span>
                 <a href="https://github.com/canonliuliang/CipherNotes/releases/latest">Open</a>
               </div>
               <div class="panel-body">
@@ -693,19 +736,26 @@
                   <svg class="octicon" viewBox="0 0 24 24"><path d="M20.6 13.2 13.2 20.6a2 2 0 0 1-2.8 0l-7-7A2 2 0 0 1 2.8 12V5A2 2 0 0 1 4.8 3h7a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.2Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
                   1.0.4
                 </div>
-                <p class="release-note">危险操作确认与窗口适配。下载入口始终指向 GitHub Releases latest。</p>
-                <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">Get installer</a>
+                <p class="release-note">
+                  <span data-en>Dangerous-action confirmations and window-fit polish. The download button always points to GitHub Releases latest.</span>
+                  <span data-zh>危险操作确认与窗口适配。下载入口始终指向 GitHub Releases latest。</span>
+                </p>
+                <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">
+                  <span data-en>Get installer</span>
+                  <span data-zh>获取安装包</span>
+                </a>
               </div>
             </section>
 
             <section class="panel about-card">
               <div class="panel-header">About</div>
               <div class="panel-body">
-                <h2>Local-first encrypted notes and file vault.</h2>
+                <h2 data-en>Local-first encrypted notes and file vault.</h2>
+                <h2 data-zh>本地优先的加密记事本与文件保险柜。</h2>
                 <ul class="sidebar-list">
-                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/></svg><span>Data stays on this Mac.</span></li>
-                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="10" rx="3"/></svg><span>Notes and vault files are encrypted before disk write.</span></li>
-                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M12 3v18"/></svg><span>No administrator account, no paid feature gate.</span></li>
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/></svg><span data-en>Data stays on this Mac.</span><span data-zh>数据留在这台 Mac 上。</span></li>
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="10" rx="3"/></svg><span data-en>Notes and vault files are encrypted before disk write.</span><span data-zh>记事与保险柜文件会在落盘前加密。</span></li>
+                  <li><svg class="octicon" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M12 3v18"/></svg><span data-en>No administrator account, no paid feature gate.</span><span data-zh>没有管理员账号，也没有付费功能门槛。</span></li>
                 </ul>
               </div>
             </section>
@@ -720,66 +770,69 @@
         README.md
       </div>
       <div class="readme-content">
-        <h2 id="features">Why CipherNotes</h2>
-        <p>CipherNotes is designed for private notes, IDs, contracts, scans, family files, project archives, and anything you do not want to place into a cloud notebook or drive.</p>
+        <h2 id="features"><span data-en>Why CipherNotes</span><span data-zh>为什么选择 CipherNotes</span></h2>
+        <p>
+          <span data-en>CipherNotes is designed for private notes, IDs, contracts, scans, family files, project archives, and anything you do not want to place into a cloud notebook or drive.</span>
+          <span data-zh>CipherNotes 适合私密记事、证件、合同、扫描件、家庭文件、项目归档，以及任何你不想放进云笔记或云盘的内容。</span>
+        </p>
         <div class="feature-grid">
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><path d="M12 3 19 6v5.4c0 4.5-2.8 7.8-7 9.6-4.2-1.8-7-5.1-7-9.6V6l7-3Z"/><path d="M9.5 12.5 11.5 14.5 15 10"/></svg>
-            <h3>Clear privacy boundary</h3>
-            <p>No remote account, no analytics, no sync server, no paid switch. Your vault file and encrypted chunks stay local.</p>
+            <h3><span data-en>Clear privacy boundary</span><span data-zh>清晰的隐私边界</span></h3>
+            <p><span data-en>No remote account, no analytics, no sync server, no paid switch. Your vault file and encrypted chunks stay local.</span><span data-zh>没有远程账号、没有分析、没有同步服务器、没有付费开关。保险库文件和加密分片只保存在本地。</span></p>
           </article>
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><path d="M8 4h6l4 4v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M14 4v4h4"/><path d="M10 13h4M10 17h6"/></svg>
-            <h3>Notes and files together</h3>
-            <p>Keep text, photos, PDFs, archives, scans, and large private files in one encrypted local workspace.</p>
+            <h3><span data-en>Notes and files together</span><span data-zh>笔记与文件统一管理</span></h3>
+            <p><span data-en>Keep text, photos, PDFs, archives, scans, and large private files in one encrypted local workspace.</span><span data-zh>把文字、照片、PDF、压缩包、扫描件和大文件都放在一个本地加密空间里。</span></p>
           </article>
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 5v14M12 5v14M16 5v14"/></svg>
-            <h3>Large-file path</h3>
-            <p>Vault files use 4 MB encrypted chunks. Large imports run in the background and exports stream back to disk.</p>
+            <h3><span data-en>Large-file path</span><span data-zh>大文件路径</span></h3>
+            <p><span data-en>Vault files use 4 MB encrypted chunks. Large imports run in the background and exports stream back to disk.</span><span data-zh>保险柜文件使用 4 MB 加密分片。大文件导入在后台运行，导出时按流写回磁盘。</span></p>
           </article>
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M17.5 15.5A5 5 0 0 1 21 20"/></svg>
-            <h3>Equal local accounts</h3>
-            <p>Accounts are visible on this Mac, but each account can only manage itself. There is no master account.</p>
+            <h3><span data-en>Equal local accounts</span><span data-zh>平等本地账户</span></h3>
+            <p><span data-en>Accounts are visible on this Mac, but each account can only manage itself. There is no master account.</span><span data-zh>本机上可见多个账户，但每个账户只能管理自己，没有主账号。</span></p>
           </article>
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><path d="M4 10c2.6-2 5.2-2.7 8-1.2 2.8-1.5 5.4-.8 8 1.2-.3 5.2-3.2 8-8 8s-7.7-2.8-8-8Z"/><path d="M8 12.5h2.5M13.5 12.5H16"/></svg>
-            <h3>Advanced protection</h3>
-            <p>Hide previews, block copy/export/share paths, tighten auto-lock, and optionally configure a decoy password.</p>
+            <h3><span data-en>Advanced protection</span><span data-zh>高级保护</span></h3>
+            <p><span data-en>Hide previews, block copy/export/share paths, tighten auto-lock, and optionally configure a decoy password.</span><span data-zh>隐藏预览、阻止复制/导出/分享、收紧自动锁定，还可以配置虚假密码。</span></p>
           </article>
           <article class="feature">
             <svg class="octicon" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/><path d="M16 16l1.5 1.5L20 15"/></svg>
-            <h3>Local security log</h3>
-            <p>Security events are encrypted with the account and avoid note bodies, filenames, passwords, and recovery codes.</p>
+            <h3><span data-en>Local security log</span><span data-zh>本地安全日志</span></h3>
+            <p><span data-en>Security events are encrypted with the account and avoid note bodies, filenames, passwords, and recovery codes.</span><span data-zh>安全事件与账户一起加密保存，不记录正文、文件名、密码或恢复码。</span></p>
           </article>
         </div>
 
         <h2 id="privacy">Privacy boundary</h2>
         <div class="privacy-table">
           <div class="privacy-box">
-            <h3>Stored locally</h3>
+            <h3><span data-en>Stored locally</span><span data-zh>本地存储</span></h3>
             <ul>
-              <li>Encrypted note payloads</li>
-              <li>Encrypted vault file chunks</li>
-              <li>Account display names</li>
-              <li>Encrypted local security logs</li>
-              <li>Optional local backups you create</li>
+              <li><span data-en>Encrypted note payloads</span><span data-zh>加密的笔记内容</span></li>
+              <li><span data-en>Encrypted vault file chunks</span><span data-zh>加密的保险柜文件分片</span></li>
+              <li><span data-en>Account display names</span><span data-zh>账户显示名</span></li>
+              <li><span data-en>Encrypted local security logs</span><span data-zh>加密的本地安全日志</span></li>
+              <li><span data-en>Optional local backups you create</span><span data-zh>你自己创建的本地备份</span></li>
             </ul>
           </div>
           <div class="privacy-box">
-            <h3>Never uploaded by the app</h3>
+            <h3><span data-en>Never uploaded by the app</span><span data-zh>应用不会上传</span></h3>
             <ul>
-              <li>Note titles or bodies</li>
-              <li>Photos, PDFs, archives, scans</li>
-              <li>Passwords or recovery codes</li>
-              <li>Usage analytics or ads data</li>
-              <li>Security log sensitive object names</li>
+              <li><span data-en>Note titles or bodies</span><span data-zh>笔记标题或正文</span></li>
+              <li><span data-en>Photos, PDFs, archives, scans</span><span data-zh>照片、PDF、压缩包、扫描件</span></li>
+              <li><span data-en>Passwords or recovery codes</span><span data-zh>密码或恢复码</span></li>
+              <li><span data-en>Usage analytics or ads data</span><span data-zh>使用分析或广告数据</span></li>
+              <li><span data-en>Security log sensitive object names</span><span data-zh>安全日志中的敏感对象名</span></li>
             </ul>
           </div>
         </div>
 
-        <h2>Developer flow</h2>
+        <h2><span data-en>Developer flow</span><span data-zh>开发流程</span></h2>
         <div class="terminal" aria-label="开发和打包命令">
           <div class="terminal-head">
             <span>release-check.sh</span>
@@ -795,37 +848,37 @@
 <span class="prompt">$</span> git push origin main</pre>
         </div>
 
-        <h2>Release notes</h2>
+        <h2><span data-en>Release notes</span><span data-zh>发布记录</span></h2>
         <div class="timeline">
           <div class="timeline-item">
             <strong>1.0.4</strong>
-            <div>Improved destructive-action confirmation, disabled unsafe buttons until ready, and made key security sheets more adaptable.</div>
+            <div><span data-en>Improved destructive-action confirmation, disabled unsafe buttons until ready, and made key security sheets more adaptable.</span><span data-zh>改进危险操作确认，未满足条件前禁用高风险按钮，并让关键安全页面更适配窗口。</span></div>
           </div>
           <div class="timeline-item">
             <strong>1.0.3</strong>
-            <div>Rebuilt the website with a GitHub-inspired layout, clearer release guidance, and cleaner SVG iconography.</div>
+            <div><span data-en>Rebuilt the website with a GitHub-inspired layout, clearer release guidance, and cleaner SVG iconography.</span><span data-zh>重建官网布局，做成更像 GitHub 的样式，并补齐发布与图标展示。</span></div>
           </div>
           <div class="timeline-item">
             <strong>1.0.2</strong>
-            <div>Added Advanced Data Protection decoy password, fixed weak button contrast, and refreshed in-app changelog visibility.</div>
+            <div><span data-en>Added Advanced Data Protection decoy password, fixed weak button contrast, and refreshed in-app changelog visibility.</span><span data-zh>加入高级保护虚假密码，修复按钮对比度，并改善应用内更新日志可见性。</span></div>
           </div>
           <div class="timeline-item">
             <strong>1.0.1</strong>
-            <div>Added encrypted local security logs, privacy-protection blocking, and removed external password-manager helper prompts.</div>
+            <div><span data-en>Added encrypted local security logs, privacy-protection blocking, and removed external password-manager helper prompts.</span><span data-zh>加入加密本地安全日志、隐私保护阻止规则，并移除外部密码管理器辅助提示。</span></div>
           </div>
           <div class="timeline-item">
             <strong>1.0.0</strong>
-            <div>Removed paid features and administrator accounts. CipherNotes became a free equal-account local vault.</div>
+            <div><span data-en>Removed paid features and administrator accounts. CipherNotes became a free equal-account local vault.</span><span data-zh>移除付费功能和管理员账号，CipherNotes 变成免费的平等账户本地保险库。</span></div>
           </div>
         </div>
 
         <div class="download-band">
-          <h2>Download</h2>
-          <p>当前发布包 1.0.4。网站下载按钮指向 GitHub Releases latest；上传源代码后，仍需要创建或更新 GitHub Release，用户才会下载到新的安装包。</p>
+          <h2><span data-en>Download</span><span data-zh>下载</span></h2>
+          <p><span data-en>Current release: 1.0.4. The website download button points to GitHub Releases latest, so users always get the newest installer after a Release is updated.</span><span data-zh>当前发布包 1.0.4。网站下载按钮指向 GitHub Releases latest，所以只要 Release 更新，用户拿到的就是最新版安装包。</span></p>
           <div class="download-actions">
-            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest">Download latest release</a>
-            <a class="button" href="https://github.com/canonliuliang/CipherNotes/actions">View CI</a>
-            <a class="button" href="https://github.com/canonliuliang/CipherNotes/issues">Report issue</a>
+            <a class="button primary" href="https://github.com/canonliuliang/CipherNotes/releases/latest"><span data-en>Download latest release</span><span data-zh>下载最新版</span></a>
+            <a class="button" href="https://github.com/canonliuliang/CipherNotes/actions"><span data-en>View CI</span><span data-zh>查看 CI</span></a>
+            <a class="button" href="https://github.com/canonliuliang/CipherNotes/issues"><span data-en>Report issue</span><span data-zh>反馈问题</span></a>
           </div>
         </div>
       </div>
@@ -833,7 +886,30 @@
   </main>
 
   <footer>
-    <div class="container">密笺 CipherNotes · Local-first encrypted notes and file vault for macOS · GitHub-inspired product page</div>
+    <div class="container"><span data-en>CipherNotes · Local-first encrypted notes and file vault for macOS · GitHub-inspired product page</span><span data-zh>密笺 CipherNotes · 面向 macOS 的本地优先加密记事本与文件保险柜 · GitHub 风格产品页</span></div>
   </footer>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const buttons = Array.from(document.querySelectorAll("[data-lang-button]"));
+      const applyLang = (lang) => {
+        root.lang = lang;
+        root.dataset.lang = lang;
+        buttons.forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.langButton === lang));
+        });
+        try { localStorage.setItem("ciphernotes-lang", lang); } catch (_) {}
+      };
+      let preferred = "en";
+      try {
+        preferred = localStorage.getItem("ciphernotes-lang") || (navigator.language === "zh-CN" ? "zh-CN" : "en");
+      } catch (_) {}
+      applyLang(preferred === "zh-CN" ? "zh-CN" : "en");
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => applyLang(button.dataset.langButton));
+      });
+    }());
+  </script>
 </body>
 </html>
