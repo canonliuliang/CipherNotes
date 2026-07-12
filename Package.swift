@@ -10,9 +10,6 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CipherNotes",
-            swiftSettings: [
-                .unsafeFlags(["-enable-experimental-feature", "IsolatedDeinit"])
-            ],
             linkerSettings: [
                 .linkedFramework("Security"),
                 .linkedFramework("LocalAuthentication")

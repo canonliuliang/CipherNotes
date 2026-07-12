@@ -62,12 +62,6 @@ final class VaultStore: ObservableObject {
         seedDemoVaultIfRequested()
     }
 
-    isolated deinit {
-        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
-        idleTimer?.invalidate()
-        notificationTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
-    }
-
     func migrateLegacyVault(username: String, oldPassword: String, enableTouchID: Bool = false) {
         let normalizedUsername: String
         do {
