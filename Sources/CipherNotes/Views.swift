@@ -803,13 +803,40 @@ struct UnlockView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let selectedAccount {
-                HStack(spacing: 8) {
-                    Image(systemName: store.isTouchIDEnabled(userID: selectedAccount.id) ? "touchid" : "person.crop.circle")
-                        .foregroundStyle(store.isTouchIDEnabled(userID: selectedAccount.id) ? .mint : .secondary)
-                    Text(selectedAccount.displayName)
-                        .font(.caption)
-                    Spacer()
-                    Text(store.isTouchIDEnabled(userID: selectedAccount.id) ? "Touch ID 已启用" : "密码登录")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: store.isTouchIDEnabled(userID: selectedAccount.id) ? "touchid" : "person.crop.circle")
+                            .foregroundStyle(store.isTouchIDEnabled(userID: selectedAccount.id) ? .mint : .secondary)
+                        Text(selectedAccount.displayName)
+                            .font(.caption)
+                        Spacer()
+                        Text(store.isTouchIDEnabled(userID: selectedAccount.id) ? "Touch ID 已启用" : "密码登录")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if store.canUseTouchID(userID: selectedAccountID) {
+                        Button {
+                            touchIDUnlocking = true
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                            Task {
+                                await store.unlockWithTouchID(userID: selectedAccount.id)
+                                await MainActor.run { touchIDUnlocking = false }
+                            }
+                        } label: {
+                            Label("使用 Touch ID 登录所选账户", systemImage: "touchid")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if store.biometricsAvailable && !store.accounts.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("密码登录成功后启用 / 修复 Touch ID", isOn: $enableTouchIDAfterPasswordLogin)
+                            Text("如果旧版曾经可以用 Touch ID，这里不会偷偷读取旧钥匙串；用密码进一次后会写入新版 Touch ID，之后按钮会回来。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Touch ID 只负责这台 Mac 的系统验证，不会替你区分密笺里的不同用户。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -828,33 +855,6 @@ struct UnlockView: View {
                 .frame(maxWidth: .infinity)
                 .disabled(!canSubmitLogin)
                 .keyboardShortcut(.defaultAction)
-            if store.canUseTouchID(userID: selectedAccountID) {
-                Button {
-                    if let selectedAccountID {
-                        touchIDUnlocking = true
-                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                        Task {
-                            await store.unlockWithTouchID(userID: selectedAccountID)
-                            await MainActor.run { touchIDUnlocking = false }
-                        }
-                    }
-                } label: {
-                    Label("使用 Touch ID 登录所选账户", systemImage: "touchid")
-                }
-                .buttonStyle(.borderless)
-                Text("提示：Touch ID 验证的是这台 Mac 的指纹/生物识别，不会区分密笺里的不同用户。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if store.biometricsAvailable && !store.accounts.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("密码登录成功后启用 / 修复 Touch ID", isOn: $enableTouchIDAfterPasswordLogin)
-                    Text("如果旧版曾经可以用 Touch ID，这里不会偷偷读取旧钥匙串；用密码进一次后会写入新版 Touch ID，之后按钮会回来。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(10)
-                .background(.quaternary.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
             if store.userCount == 0 {
                 Text("还没有用户，请切到“注册”创建第一个用户。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -1269,8 +1269,17 @@ struct NotesView: View {
             .disabled(store.currentAccountAdvancedDataProtectionEnabled)
         Divider()
         if store.biometricsAvailable {
-            Button("为当前账户启用 Touch ID") { store.enableTouchID() }
-            Button("关闭当前账户 Touch ID") { store.disableTouchID() }
+            Button {
+                if store.currentAccountTouchIDEnabled {
+                    store.disableTouchID()
+                } else {
+                    store.enableTouchID()
+                }
+            } label: {
+                Label(store.currentAccountTouchIDEnabled ? "关闭当前账户 Touch ID" : "为当前账户启用 Touch ID", systemImage: "touchid")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
         Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级数据保护" : "开启高级数据保护") {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
@@ -2122,6 +2131,20 @@ struct SecurityCenterView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        if store.biometricsAvailable {
+                            Button {
+                                if store.currentAccountTouchIDEnabled {
+                                    store.disableTouchID()
+                                } else {
+                                    store.enableTouchID()
+                                }
+                            } label: {
+                                Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .securitySection()
 
@@ -2184,6 +2207,7 @@ struct SecurityCenterView: View {
                             } label: {
                                 Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护" : "开启高级保护", systemImage: "shield.lefthalf.filled")
                             }
+                            .buttonStyle(.borderedProminent)
                             if store.biometricsAvailable {
                                 Button {
                                     if store.currentAccountTouchIDEnabled {
@@ -2194,14 +2218,15 @@ struct SecurityCenterView: View {
                                 } label: {
                                     Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
                                 }
+                                .buttonStyle(.borderedProminent)
                             }
                             Button {
                                 store.rotateRecoveryCode()
                             } label: {
                                 Label("生成恢复码", systemImage: "key.fill")
                             }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(ClearButtonStyle())
                     }
                     .securitySection()
 
@@ -2523,46 +2548,66 @@ struct UserManagementView: View {
     @State private var confirmationText = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Label("账户与安全", systemImage: "person.2.badge.gearshape")
-                    .font(.title2.bold())
-                Text("这台 Mac 上的账户彼此可见，但只能管理当前登录账户。其他账户的数据由各自密码和恢复码保护。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("账户与安全", systemImage: "person.2.badge.gearshape")
+                        .font(.title2.bold())
+                    Text("这台 Mac 上的账户彼此可见，但只能管理当前登录账户。其他账户的数据由各自密码和恢复码保护。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
 
-                if store.accounts.isEmpty {
-                    ContentUnavailableView("暂无账户", systemImage: "person.crop.circle.badge.questionmark")
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(store.accounts, id: \.id) { account in
-                            accountRow(account)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                        accountMetric("当前账户", store.signedInUsername ?? "未登录", "person.crop.circle.fill", .mint)
+                        accountMetric("本机账户", "\(store.accounts.count) 个", "person.2.fill", .blue)
+                        accountMetric("Touch ID", store.currentAccountTouchIDEnabled ? "已启用" : "未启用", "touchid", store.currentAccountTouchIDEnabled ? .mint : .secondary)
+                        accountMetric("高级保护", store.currentAccountAdvancedDataProtectionEnabled ? "已开启" : "未开启", "shield.lefthalf.filled", store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        sectionTitle("本机账户", systemImage: "person.2.fill")
+                        Text("你可以查看所有本地账户状态，但只能修改当前登录账户。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if store.accounts.isEmpty {
+                            ContentUnavailableView("暂无账户", systemImage: "person.crop.circle.badge.questionmark")
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(store.accounts, id: \.id) { account in
+                                    accountRow(account)
+                                }
+                            }
                         }
                     }
-                }
+                    .securitySection()
 
-                Divider()
-                passwordSection
-                Divider()
-                dangerZone
-                ErrorText(store.errorMessage)
-                HStack {
-                    Spacer()
-                    Button("关闭") { dismiss() }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
+                    passwordSection
+                    dangerZone
+                    ErrorText(store.errorMessage)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(24)
         }
+        .padding(24)
         .frame(minWidth: 560, idealWidth: 620, minHeight: 620, idealHeight: 660)
     }
 
     private var passwordSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("当前账户密码", systemImage: "key.fill")
-                .font(.headline)
+            sectionTitle("当前账户密码", systemImage: "key.fill")
+            Text("修改后会保留当前账户的笔记、保险柜文件和安全日志。新的恢复码会在需要时重新生成。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             SecureField("当前账户密码", text: $passwordCurrent)
                 .textFieldStyle(.roundedBorder)
             SecureField("新账户密码", text: $passwordNew)
@@ -2572,7 +2617,7 @@ struct UserManagementView: View {
             PasswordStrengthIndicator(password: passwordNew)
             HStack {
                 Spacer()
-                Button("更新密码") {
+                Button {
                     store.changeCurrentUserPassword(
                         currentPassword: passwordCurrent,
                         newPassword: passwordNew,
@@ -2583,18 +2628,19 @@ struct UserManagementView: View {
                         passwordNew = ""
                         passwordConfirmation = ""
                     }
+                } label: {
+                    Label("更新密码", systemImage: "key.fill")
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(passwordNew != passwordConfirmation)
             }
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .securitySection()
     }
 
     private var dangerZone: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("危险操作", systemImage: "exclamationmark.triangle.fill")
-                .font(.headline)
+            sectionTitle("危险操作", systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
             Text("删除当前账户、清空全部数据都需要当前账户密码、对应确认文字和 macOS 二次确认。")
                 .font(.caption)
@@ -2621,6 +2667,10 @@ struct UserManagementView: View {
         }
         .padding(12)
         .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.red.opacity(0.22), lineWidth: 1)
+        }
     }
 
     private var dangerButtons: some View {
@@ -2698,7 +2748,7 @@ struct UserManagementView: View {
                 Button("关闭 Touch ID") {
                     store.disableTouchID(userID: account.id)
                 }
-                .buttonStyle(ClearButtonStyle())
+                .buttonStyle(.borderedProminent)
                 .lineLimit(1)
             }
         }
@@ -2708,6 +2758,28 @@ struct UserManagementView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(isCurrent ? Color.mint.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 1)
         }
+    }
+
+    private func accountMetric(_ title: String, _ value: String, _ systemImage: String, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.headline)
+                .lineLimit(1)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func sectionTitle(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.headline)
     }
 
     private func confirmWithSystem(title: String, message: String) -> Bool {
