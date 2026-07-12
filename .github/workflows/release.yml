@@ -58,17 +58,24 @@ jobs:
       - name: Build installer and archive
         run: Packaging/build-release.sh
 
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          rm -rf release-assets
+          mkdir -p release-assets
+          cp "outputs/密笺安装器.pkg" "release-assets/CipherNotes-installer.pkg"
+          cp "outputs/密笺-macOS.zip" "release-assets/CipherNotes-macOS.zip"
+          cp "outputs/发布说明.md" "release-assets/release-notes.md"
+          cp "outputs/使用说明.md" "release-assets/user-guide.md"
+          cp "outputs/产品介绍.html" "release-assets/product-page.html"
+          cp "outputs/密笺图标.png" "release-assets/icon.png"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: CipherNotes-release
           path: |
-            outputs/密笺安装器.pkg
-            outputs/密笺-macOS.zip
-            outputs/发布说明.md
-            outputs/使用说明.md
-            outputs/产品介绍.html
-            outputs/密笺图标.png
+            release-assets/*
 
       - name: Create or update GitHub Release
         env:
@@ -89,10 +96,10 @@ jobs:
               --latest
           fi
           gh release upload "${RELEASE_TAG}" \
-            outputs/密笺安装器.pkg \
-            outputs/密笺-macOS.zip \
-            outputs/发布说明.md \
-            outputs/使用说明.md \
-            outputs/产品介绍.html \
-            outputs/密笺图标.png \
+            release-assets/CipherNotes-installer.pkg \
+            release-assets/CipherNotes-macOS.zip \
+            release-assets/release-notes.md \
+            release-assets/user-guide.md \
+            release-assets/product-page.html \
+            release-assets/icon.png \
             --clobber
