@@ -1,8 +1,8 @@
-# CipherNotes 1.0.4 - 危险操作确认与窗口适配
+# CipherNotes 1.0.4 - 界面层级与外观修复
 
 ## Summary
 
-CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. Version 1.0.4 sharpens the product feel around destructive actions and window ergonomics so the app reads less like a utility build and more like a finished product.
+CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.4 build continues the product polish pass with clearer status, safer actions, better theme switching, and more visible feedback while writing or importing files.
 
 ## What's Changed
 
@@ -11,6 +11,12 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 - Turned Advanced Data Protection into a clearer mode card that lists the blocked copy/export/share/preview paths.
 - Made decoy password setup calmer by keeping destructive erase mode behind an explicit reveal.
 - Added a vault import queue with per-file progress for large encrypted imports.
+- Fixed appearance switching by syncing SwiftUI and AppKit, so menus, alerts, and file panels follow the selected light/dark mode.
+- Improved custom button contrast in both light and dark modes.
+- Added editor save feedback with `正在保存` / `已保存` state and a manual save control.
+- Added actionable empty states for notes, search results, and archive views.
+- Added a Security Center version/update card with direct links to the latest GitHub Release and website.
+- Made Security Center quick actions and backup controls adapt to narrow windows.
 - Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.

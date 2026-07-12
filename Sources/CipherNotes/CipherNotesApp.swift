@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -7,9 +8,18 @@ struct CipherNotesApp: App {
     @AppStorage("noteSort") private var noteSortRawValue = NoteSort.updatedNewest.rawValue
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
 
+    private var appAppearance: AppAppearance {
+        AppAppearance(rawValue: appAppearanceRawValue) ?? .system
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(store)
+                .preferredColorScheme(appAppearance.colorScheme)
+                .onAppear { applyAppKitAppearance(appAppearance) }
+                .onChange(of: appAppearanceRawValue) { _, newValue in
+                    applyAppKitAppearance(AppAppearance(rawValue: newValue) ?? .system)
+                }
         }
         .defaultSize(width: 980, height: 680)
         .commands {
@@ -115,5 +125,16 @@ struct CipherNotesApp: App {
 
     private func post(_ name: Notification.Name) {
         NotificationCenter.default.post(name: name, object: nil)
+    }
+
+    private func applyAppKitAppearance(_ appearance: AppAppearance) {
+        switch appearance {
+        case .system:
+            NSApplication.shared.appearance = nil
+        case .light:
+            NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 }

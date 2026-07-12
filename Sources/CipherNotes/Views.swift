@@ -356,8 +356,8 @@ struct ClearButtonStyle: ButtonStyle {
         switch prominence {
         case .standard:
             colorScheme == .dark
-                ? Color.white.opacity(isPressed ? 0.20 : 0.14)
-                : Color.white.opacity(isPressed ? 0.92 : 0.78)
+                ? Color.white.opacity(isPressed ? 0.24 : 0.16)
+                : Color.black.opacity(isPressed ? 0.095 : 0.060)
         case .primary:
             Color(red: 0.0, green: 0.42, blue: 0.82).opacity(isPressed ? 0.82 : 1)
         case .danger:
@@ -370,7 +370,7 @@ struct ClearButtonStyle: ButtonStyle {
     private var borderColor: Color {
         switch prominence {
         case .standard:
-            colorScheme == .dark ? .white.opacity(0.20) : .black.opacity(0.16)
+            colorScheme == .dark ? .white.opacity(0.24) : .black.opacity(0.18)
         case .primary:
             .white.opacity(0.28)
         case .danger:
@@ -1162,6 +1162,24 @@ struct NotesView: View {
                         }
                     }
                 }
+                .overlay {
+                    if filteredNotes.isEmpty {
+                        VStack(spacing: 12) {
+                            ContentUnavailableView(
+                                emptyNotesTitle,
+                                systemImage: "note.text.badge.plus",
+                                description: Text(emptyNotesDescription)
+                            )
+                            Button {
+                                selection = store.addNote()
+                            } label: {
+                                Label("新建第一条笔记", systemImage: "square.and.pencil")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
+                    }
+                }
                 .searchable(text: $query, prompt: "搜索已解锁的笔记")
                 HStack {
                     Button { selection = store.addNote() } label: { Label("新笔记", systemImage: "square.and.pencil") }
@@ -1230,6 +1248,17 @@ struct NotesView: View {
                 tint: .teal
             )
         }
+    }
+
+    private var emptyNotesTitle: String {
+        if !query.isEmpty { return "没有匹配的笔记" }
+        if (NoteFilter(rawValue: noteFilterRawValue) ?? .active) == .archived { return "归档是空的" }
+        return "还没有笔记"
+    }
+
+    private var emptyNotesDescription: String {
+        if !query.isEmpty { return "换个关键词，或直接创建一条新的加密笔记。" }
+        return "新建后会自动保存在当前本地账户的加密保险库里。"
     }
 
     private func mainStatusPill(_ title: String, value: String, systemImage: String, tint: Color) -> some View {
@@ -1583,6 +1612,18 @@ struct NoteEditor: View {
         (try? AttributedString(markdown: draftBody.isEmpty ? "空笔记" : draftBody)) ?? AttributedString(draftBody.isEmpty ? "空笔记" : draftBody)
     }
 
+    private var saveStatusText: String {
+        savePending ? "正在保存" : "已保存"
+    }
+
+    private var saveStatusIcon: String {
+        savePending ? "arrow.triangle.2.circlepath" : "checkmark.circle"
+    }
+
+    private var saveStatusTint: Color {
+        savePending ? .orange : .mint
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -1609,23 +1650,21 @@ struct NoteEditor: View {
                         Label(markdownPreview ? "编辑" : "Markdown 预览", systemImage: markdownPreview ? "pencil" : "doc.richtext")
                     }
                     .labelStyle(.iconOnly)
+                    Button {
+                        saveNow()
+                    } label: {
+                        Label("立即保存", systemImage: "tray.and.arrow.down.fill")
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(!savePending)
                 }
             }
             .buttonStyle(ClearButtonStyle())
             .padding(.horizontal, 28).padding(.top, 24)
             if let note {
-                HStack(spacing: 10) {
-                    Text("最后更新 \(note.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                    Text("·")
-                    Text("\(characterCount) 字符")
-                    Text("·")
-                    Text("\(wordCount) 词")
-                    Text("·")
-                    Text("\(lineCount) 行")
-                    Text("·")
-                    Text("约 \(readingMinutes) 分钟")
-                    Text("·")
-                    Label("自动保存", systemImage: "checkmark.circle")
+                ViewThatFits(in: .horizontal) {
+                    editorMetaRow(note: note)
+                    editorCompactMeta(note: note)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1669,6 +1708,34 @@ struct NoteEditor: View {
         .onDisappear {
             saveTask?.cancel()
             saveNow()
+        }
+    }
+
+    private func editorMetaRow(note: Note) -> some View {
+        HStack(spacing: 10) {
+            Text("最后更新 \(note.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+            Text("·")
+            Text("\(characterCount) 字符")
+            Text("·")
+            Text("\(wordCount) 词")
+            Text("·")
+            Text("\(lineCount) 行")
+            Text("·")
+            Text("约 \(readingMinutes) 分钟")
+            Text("·")
+            Label(saveStatusText, systemImage: saveStatusIcon)
+                .foregroundStyle(saveStatusTint)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.86)
+    }
+
+    private func editorCompactMeta(note: Note) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("最后更新 \(note.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+            Text("\(characterCount) 字符 · \(wordCount) 词 · \(lineCount) 行 · 约 \(readingMinutes) 分钟")
+            Label(saveStatusText, systemImage: saveStatusIcon)
+                .foregroundStyle(saveStatusTint)
         }
     }
 
@@ -2318,32 +2385,7 @@ struct SecurityCenterView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("快捷操作", systemImage: "wand.and.stars")
-                        HStack(spacing: 10) {
-                            Button {
-                                store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
-                            } label: {
-                                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护" : "开启高级保护", systemImage: "shield.lefthalf.filled")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            if store.biometricsAvailable {
-                                Button {
-                                    if store.currentAccountTouchIDEnabled {
-                                        store.disableTouchID()
-                                    } else {
-                                        store.enableTouchID()
-                                    }
-                                } label: {
-                                    Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                            Button {
-                                store.rotateRecoveryCode()
-                            } label: {
-                                Label("生成恢复码", systemImage: "key.fill")
-                            }
-                            .buttonStyle(.bordered)
-                        }
+                        quickActionButtons
                     }
                     .securitySection()
 
@@ -2406,26 +2448,12 @@ struct SecurityCenterView: View {
                                 tint: .secondary
                             )
                         }
-                        HStack(spacing: 10) {
-                            Button {
-                                backupVault()
-                            } label: {
-                                Label("备份保险库", systemImage: "square.and.arrow.up")
-                            }
-                            Button {
-                                restoreVault()
-                            } label: {
-                                Label("从备份还原", systemImage: "arrow.counterclockwise")
-                            }
-                            Button {
-                                copyVaultPath()
-                            } label: {
-                                Label("复制数据位置", systemImage: "doc.on.doc")
-                            }
-                        }
+                        backupActionButtons
                         .buttonStyle(ClearButtonStyle())
                     }
                     .securitySection()
+
+                    versionUpdateCard
                 }
                 .padding(.vertical, 2)
             }
@@ -2447,6 +2475,83 @@ struct SecurityCenterView: View {
             Button("好") { store.errorMessage = nil }
         } message: {
             Text(store.errorMessage ?? "")
+        }
+    }
+
+    private var quickActionButtons: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+            Button {
+                store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
+            } label: {
+                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护" : "开启高级保护", systemImage: "shield.lefthalf.filled")
+            }
+            .buttonStyle(.borderedProminent)
+            if store.biometricsAvailable {
+                Button {
+                    if store.currentAccountTouchIDEnabled {
+                        store.disableTouchID()
+                    } else {
+                        store.enableTouchID()
+                    }
+                } label: {
+                    Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Button {
+                store.rotateRecoveryCode()
+            } label: {
+                Label("生成恢复码", systemImage: "key.fill")
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var backupActionButtons: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+            Button {
+                backupVault()
+            } label: {
+                Label("备份保险库", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                restoreVault()
+            } label: {
+                Label("从备份还原", systemImage: "arrow.counterclockwise")
+            }
+            Button {
+                copyVaultPath()
+            } label: {
+                Label("复制数据位置", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    private var versionUpdateCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("版本与更新", systemImage: "arrow.down.circle.fill")
+            Text("当前公开下载包由 GitHub Release 自动构建。每次推送源码后，必须有对应 Release 工作流成功，用户下载到的才是最新版。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            updateButtons
+            .buttonStyle(ClearButtonStyle())
+        }
+        .securitySection()
+    }
+
+    private var updateButtons: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
+            Button {
+                NSWorkspace.shared.open(URL(string: "https://github.com/canonliuliang/CipherNotes/releases/latest")!)
+            } label: {
+                Label("打开最新版下载页", systemImage: "arrow.down.circle")
+            }
+            Button {
+                NSWorkspace.shared.open(URL(string: "https://canonliuliang.github.io/CipherNotes/")!)
+            } label: {
+                Label("打开官网", systemImage: "safari")
+            }
         }
     }
 
@@ -2979,6 +3084,12 @@ struct ChangelogView: View {
                 "高级数据保护改成模式卡，明确显示会收紧自动锁定并阻止复制、导出、共享和预览路径。",
                 "虚假密码默认推荐进入虚假空间，直接销毁模式需要主动展开后才可选择。",
                 "保险柜导入新增队列和进度条，大文件加密移入时可以看到当前文件和处理进度。",
+                "外观切换同步到 AppKit 层，系统菜单、弹窗和保存面板会跟随浅色/深色设置。",
+                "提高自定义按钮在浅色和深色模式下的底色对比，减少按钮与背景融为一体。",
+                "笔记编辑器新增正在保存/已保存状态和手动保存按钮。",
+                "空笔记、无搜索结果和归档为空时提供直接新建入口。",
+                "安全中心的快捷操作、备份按钮和更新入口改为自适应布局，窄窗口下不会挤出边界。",
+                "新增版本与更新入口，可直接打开 GitHub 最新版下载页和官网。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
                 "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
                 "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",
@@ -3207,8 +3318,17 @@ struct ChangelogView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label("更新日志", systemImage: "sparkles")
-                .font(.title2.bold())
+            HStack {
+                Label("更新日志", systemImage: "sparkles")
+                    .font(.title2.bold())
+                Spacer()
+                Button {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/canonliuliang/CipherNotes/releases/latest")!)
+                } label: {
+                    Label("最新版下载页", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(ClearButtonStyle())
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(entries) { entry in
@@ -3238,7 +3358,7 @@ struct ChangelogView: View {
             }
         }
         .padding(24)
-        .frame(width: 620, height: 520)
+        .frame(minWidth: 620, idealWidth: 680, minHeight: 520, idealHeight: 620)
     }
 }
 
