@@ -7,6 +7,8 @@ APPBUILD_DIR="/tmp/ciphernotes-appbuild"
 APP_PATH="$APPBUILD_DIR/密笺.app"
 OUTPUTS_DIR="$ROOT_DIR/outputs"
 PRODUCTBUILD_LOG="/tmp/ciphernotes-productbuild.log"
+ICONBUILD_DIR="/tmp/ciphernotes-iconbuild"
+ICONSET_DIR="$ICONBUILD_DIR/AppIcon.iconset"
 
 cd "$ROOT_DIR"
 
@@ -16,8 +18,31 @@ grep -q "version: \"$CIPHERNOTES_VERSION\"" "$ROOT_DIR/Sources/CipherNotes/Views
 grep -q "Current release: \`$CIPHERNOTES_VERSION\`" "$ROOT_DIR/README.md"
 grep -q "当前发布包 $CIPHERNOTES_VERSION" "$ROOT_DIR/Website/index.html"
 
-swift Packaging/generate-icon.swift
-iconutil -c icns "/tmp/ciphernotes-iconbuild/AppIcon.iconset" -o "$ROOT_DIR/Assets/AppIcon.icns"
+mkdir -p "$ROOT_DIR/Assets"
+if [ ! -f "$ROOT_DIR/Assets/AppIcon.icns" ] || [ ! -f "$ROOT_DIR/Assets/AppIcon-1024.png" ]; then
+    rm -rf "$ICONSET_DIR"
+    mkdir -p "$ICONSET_DIR"
+    SOURCE_ICON="$ROOT_DIR/Website/icon.png"
+    if [ ! -f "$SOURCE_ICON" ]; then
+        SOURCE_ICON="$ROOT_DIR/docs/icon.png"
+    fi
+    if [ ! -f "$SOURCE_ICON" ]; then
+        swift Packaging/generate-icon.swift
+    else
+        sips -s format png -z 16 16 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
+        sips -s format png -z 32 32 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
+        sips -s format png -z 32 32 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_32x32.png" >/dev/null
+        sips -s format png -z 64 64 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_32x32@2x.png" >/dev/null
+        sips -s format png -z 128 128 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_128x128.png" >/dev/null
+        sips -s format png -z 256 256 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null
+        sips -s format png -z 256 256 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_256x256.png" >/dev/null
+        sips -s format png -z 512 512 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null
+        sips -s format png -z 512 512 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_512x512.png" >/dev/null
+        sips -s format png -z 1024 1024 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
+        cp "$ICONSET_DIR/icon_512x512@2x.png" "$ROOT_DIR/Assets/AppIcon-1024.png"
+        iconutil -c icns "$ICONSET_DIR" -o "$ROOT_DIR/Assets/AppIcon.icns"
+    fi
+fi
 swift test --scratch-path /tmp/ciphernotes-test
 swift build -c release --scratch-path "$BUILD_DIR"
 
