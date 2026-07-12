@@ -1050,19 +1050,15 @@ struct NotesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("区域", selection: $workspaceMode) {
-                ForEach(WorkspaceMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            workspaceSwitcher
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
 
             mainStatusStrip
                 .padding(.horizontal, 18)
                 .padding(.bottom, 10)
+                .frame(minHeight: 54)
 
             ZStack {
                 if workspaceMode == .notes {
@@ -1074,14 +1070,29 @@ struct NotesView: View {
                         .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: workspaceMode)
         }
+        .toolbar(content: workspaceToolbar)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesAddAttachments)) { _ in
             workspaceMode = .vault
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .cipherNotesOpenVaultImporter, object: nil)
             }
         }
+    }
+
+    private var workspaceSwitcher: some View {
+        Picker("区域", selection: $workspaceMode) {
+            ForEach(WorkspaceMode.allCases) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.regular)
+        .frame(height: 30)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     private var notesBody: some View {
@@ -1096,11 +1107,7 @@ struct NotesView: View {
                     Label(currentAccountBadgeText, systemImage: "crown")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if store.currentAccountAdvancedDataProtectionEnabled {
-                        Label("高级数据保护已开启", systemImage: "shield.lefthalf.filled")
-                            .font(.caption)
-                            .foregroundStyle(.mint)
-                    }
+                    protectionStatusBadge
                     Picker("筛选", selection: $noteFilterRawValue) {
                         ForEach(NoteFilter.allCases) { filter in
                             Text(filter.rawValue).tag(filter.rawValue)
@@ -1197,7 +1204,6 @@ struct NotesView: View {
                 ContentUnavailableView("选择一条笔记", systemImage: "note.text", description: Text("或创建一条新的加密笔记"))
             }
         })
-        .toolbar(content: notesToolbar)
         .onAppear(perform: ensureSelection)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesNewNote)) { _ in addNewNoteFromCommand() }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesDuplicateNote)) { _ in duplicateSelectedNote() }
@@ -1219,6 +1225,16 @@ struct NotesView: View {
         .alert("密笺", isPresented: storeErrorPresented, actions: errorAlertActions, message: errorAlertMessage)
         .sheet(isPresented: $showingExportShare, content: exportShareSheet)
         .sheet(isPresented: $showingImportShare, content: importShareSheet)
+    }
+
+    private var protectionStatusBadge: some View {
+        Label(
+            store.currentAccountAdvancedDataProtectionEnabled ? "高级数据保护已开启" : "标准保护模式",
+            systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
+        )
+        .font(.caption)
+        .foregroundStyle(store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
+        .lineLimit(1)
     }
 
     private var mainStatusStrip: some View {
@@ -1297,10 +1313,14 @@ struct NotesView: View {
     }
 
     @ToolbarContentBuilder
-    private func notesToolbar() -> some ToolbarContent {
+    private func workspaceToolbar() -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
-                notesToolbarMenu
+                if workspaceMode == .notes {
+                    notesToolbarMenu
+                } else {
+                    vaultToolbarMenu
+                }
             } label: {
                 Image(systemName: "gearshape")
             }
@@ -1310,6 +1330,34 @@ struct NotesView: View {
                 Label("锁定", systemImage: "lock.fill")
             }
             .keyboardShortcut("l", modifiers: .command)
+        }
+    }
+
+    @ViewBuilder
+    private var vaultToolbarMenu: some View {
+        Button("移入照片或文件…") {
+            NotificationCenter.default.post(name: .cipherNotesOpenVaultImporter, object: nil)
+        }
+        Divider()
+        Button("备份保险库…") { backupVault() }
+        Button("从备份还原…") { restoreVault() }
+        Divider()
+        if store.biometricsAvailable {
+            Button {
+                if store.currentAccountTouchIDEnabled {
+                    store.disableTouchID()
+                } else {
+                    store.enableTouchID()
+                }
+            } label: {
+                Label(store.currentAccountTouchIDEnabled ? "关闭当前账户 Touch ID" : "为当前账户启用 Touch ID", systemImage: "touchid")
+            }
+        }
+        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级数据保护" : "开启高级数据保护") {
+            store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
+        }
+        Button("生成新的恢复码") {
+            store.rotateRecoveryCode()
         }
     }
 
@@ -1834,22 +1882,7 @@ struct VaultView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("保险柜", systemImage: "lock.rectangle.stack.fill")
-                        .font(.title2.bold())
-                    Text("照片和文件独立保存在保险柜里。移入成功后，原文件会从原位置删除。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    chooseVaultFiles()
-                } label: {
-                    Label("移入照片或文件", systemImage: "tray.and.arrow.down.fill")
-                }
-                .buttonStyle(.borderedProminent)
-            }
+            vaultHeader
 
             if intakeActive {
                 VaultIntakeVisual()
@@ -1873,17 +1906,12 @@ struct VaultView: View {
                     }
                 }
 
-            HStack {
-                Picker("文件类型", selection: $filter) {
-                    ForEach(VaultFilter.allCases) { filter in
-                        Text(filter.rawValue).tag(filter)
-                    }
+            ViewThatFits(in: .horizontal) {
+                vaultFilterRow
+                VStack(alignment: .leading, spacing: 8) {
+                    vaultFilterPicker
+                    vaultCountText
                 }
-                .pickerStyle(.segmented)
-                Spacer()
-                Text("\(store.vaultItems.count) 个文件 · \(ByteCountFormatter.string(fromByteCount: Int64(totalByteCount), countStyle: .file))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if filteredItems.isEmpty {
@@ -1945,6 +1973,69 @@ struct VaultView: View {
         .alert("密笺", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("好") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+    }
+
+    private var vaultHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 14) {
+                vaultTitleBlock
+                Spacer()
+                vaultImportButton
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                vaultTitleBlock
+                vaultImportButton
+            }
+        }
+        .frame(minHeight: 58, alignment: .topLeading)
+    }
+
+    private var vaultTitleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("保险柜", systemImage: "lock.rectangle.stack.fill")
+                .font(.title2.bold())
+            Text("照片和文件独立保存在保险柜里。移入成功后，原文件会从原位置删除。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var vaultImportButton: some View {
+        Button {
+            chooseVaultFiles()
+        } label: {
+            Label("移入照片或文件", systemImage: "tray.and.arrow.down.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.regular)
+    }
+
+    private var vaultFilterRow: some View {
+        HStack(spacing: 12) {
+            vaultFilterPicker
+            Spacer(minLength: 12)
+            vaultCountText
+        }
+    }
+
+    private var vaultFilterPicker: some View {
+        Picker("文件类型", selection: $filter) {
+            ForEach(VaultFilter.allCases) { filter in
+                Text(filter.rawValue).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(minWidth: 320, maxWidth: 430)
+    }
+
+    private var vaultCountText: some View {
+        Text("\(store.vaultItems.count) 个文件 · \(ByteCountFormatter.string(fromByteCount: Int64(totalByteCount), countStyle: .file))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
     }
 
     private func chooseVaultFiles() {
@@ -3090,6 +3181,10 @@ struct ChangelogView: View {
                 "空笔记、无搜索结果和归档为空时提供直接新建入口。",
                 "安全中心的快捷操作、备份按钮和更新入口改为自适应布局，窄窗口下不会挤出边界。",
                 "新增版本与更新入口，可直接打开 GitHub 最新版下载页和官网。",
+                "固定记事本/保险柜主切换条高度，两个区域之间切换不再出现顶部控件跳动。",
+                "记事本与保险柜共用同一套窗口工具栏，避免切换时 macOS 重新计算工具栏高度。",
+                "笔记侧栏始终显示保护状态，标准保护和高级保护之间切换不再改变侧栏头部高度。",
+                "保险柜标题区和文件类型筛选改为稳定自适应布局，常见窗口宽度下不再突然换行。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
                 "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
                 "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",
