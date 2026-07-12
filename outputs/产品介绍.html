@@ -655,6 +655,7 @@
       }
     }
   </style>
+  <link rel="preload" as="image" href="./media/app-screenshot.jpg" fetchpriority="high">
 </head>
 <body>
   <header class="topbar">
@@ -721,7 +722,7 @@
               <span class="dot green"></span>
               <span style="margin-left:8px;color:var(--muted);font-size:13px;">CipherNotes.app</span>
             </div>
-            <img src="./media/app-screenshot.png" alt="CipherNotes macOS app screenshot">
+            <img src="./media/app-screenshot.jpg" alt="CipherNotes macOS app screenshot" loading="eager" decoding="async" fetchpriority="high">
           </section>
 
           <aside class="sidebar reveal delay-2">
