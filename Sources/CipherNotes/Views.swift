@@ -1060,6 +1060,10 @@ struct NotesView: View {
             .padding(.top, 12)
             .padding(.bottom, 8)
 
+            mainStatusStrip
+                .padding(.horizontal, 18)
+                .padding(.bottom, 10)
+
             ZStack {
                 if workspaceMode == .notes {
                     notesBody
@@ -1197,6 +1201,60 @@ struct NotesView: View {
         .alert("密笺", isPresented: storeErrorPresented, actions: errorAlertActions, message: errorAlertMessage)
         .sheet(isPresented: $showingExportShare, content: exportShareSheet)
         .sheet(isPresented: $showingImportShare, content: importShareSheet)
+    }
+
+    private var mainStatusStrip: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+            mainStatusPill(
+                "当前账户",
+                value: store.signedInUsername ?? "未登录",
+                systemImage: "person.crop.circle.fill",
+                tint: .mint
+            )
+            mainStatusPill(
+                "保护模式",
+                value: store.currentAccountAdvancedDataProtectionEnabled ? "高级保护" : "标准保护",
+                systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield",
+                tint: store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary
+            )
+            mainStatusPill(
+                "自动锁定",
+                value: "\(store.autoLockMinutes) 分钟",
+                systemImage: "timer",
+                tint: .blue
+            )
+            mainStatusPill(
+                "保险柜",
+                value: "\(store.vaultItems.count) 个文件",
+                systemImage: "lock.rectangle.stack.fill",
+                tint: .teal
+            )
+        }
+    }
+
+    private func mainStatusPill(_ title: String, value: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.primary.opacity(0.08), lineWidth: 1)
+        }
     }
 
     private func delete(_ id: UUID) {
@@ -1731,6 +1789,11 @@ struct VaultView: View {
                     .transition(MotionStyle.transition(reduceMotion: reduceMotion))
             }
 
+            if !store.vaultImportJobs.isEmpty {
+                vaultImportQueue
+                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+            }
+
             TextField("搜索保险柜文件", text: $query)
                 .textFieldStyle(.roundedBorder)
                 .disabled(store.currentAccountAdvancedDataProtectionEnabled)
@@ -1828,6 +1891,46 @@ struct VaultView: View {
         intakeActive = true
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         store.importFilesToVault(urls: panel.urls, deleteOriginals: true)
+    }
+
+    private var vaultImportQueue: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("导入队列", systemImage: "arrow.down.doc.fill")
+                .font(.headline)
+            ForEach(store.vaultImportJobs.prefix(4)) { job in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Image(systemName: job.status == .failed ? "exclamationmark.triangle.fill" : "lock.rotation")
+                            .foregroundStyle(job.status == .failed ? .orange : .mint)
+                        Text(job.fileName)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Text(job.status.label)
+                            .font(.caption)
+                            .foregroundStyle(job.status == .failed ? .orange : .secondary)
+                    }
+                    ProgressView(value: job.progress)
+                        .progressViewStyle(.linear)
+                    HStack {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(job.processedByteCount), countStyle: .file))
+                        Text("/")
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(job.byteCount), countStyle: .file))
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.primary.opacity(0.10), lineWidth: 1)
+        }
     }
 
     private func showCeremony(_ message: String) {
@@ -2052,6 +2155,7 @@ struct SecurityCenterView: View {
     @State private var decoyPassword = ""
     @State private var decoyConfirmation = ""
     @State private var decoyAction: DecoyPasswordAction = .openDecoySpace
+    @State private var showDecoyDestructiveMode = false
 
     private var storeErrorPresented: Binding<Bool> {
         Binding(
@@ -2148,9 +2252,11 @@ struct SecurityCenterView: View {
                     }
                     .securitySection()
 
+                    advancedProtectionModeCard
+
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("虚假密码", systemImage: "theatermasks.fill")
-                        Text("输入虚假密码时，不会打开真实保险库。推荐使用“进入虚假空间”；“直接销毁本地数据”不可逆，只适合极端场景。")
+                        Text("输入虚假密码时，不会打开真实保险库。默认进入临时虚假空间，不读写真实数据。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         SecureField("当前账户真实密码", text: $decoyCurrentPassword)
@@ -2160,15 +2266,26 @@ struct SecurityCenterView: View {
                         SecureField("再次输入虚假密码", text: $decoyConfirmation)
                             .textFieldStyle(.roundedBorder)
                         Picker("触发后", selection: $decoyAction) {
-                            ForEach(DecoyPasswordAction.allCases) { action in
-                                Text(action.label).tag(action)
+                            Text(DecoyPasswordAction.openDecoySpace.label).tag(DecoyPasswordAction.openDecoySpace)
+                            if showDecoyDestructiveMode {
+                                Text(DecoyPasswordAction.eraseLocalData.label).tag(DecoyPasswordAction.eraseLocalData)
                             }
                         }
                         .pickerStyle(.segmented)
-                        if decoyAction == .eraseLocalData {
-                            Label("销毁模式命中后会删除本机保险库和保险柜附件，无法撤销。", systemImage: "exclamationmark.triangle.fill")
+                        Toggle("显示销毁模式", isOn: Binding(
+                            get: { showDecoyDestructiveMode },
+                            set: { value in
+                                showDecoyDestructiveMode = value
+                                if !value && decoyAction == .eraseLocalData {
+                                    decoyAction = .openDecoySpace
+                                }
+                            }
+                        ))
+                        .font(.caption)
+                        if showDecoyDestructiveMode {
+                            Label(decoyAction == .eraseLocalData ? "销毁模式命中后会删除本机保险库和保险柜附件，无法撤销。" : "销毁模式只适合极端场景，默认不建议开启。", systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(decoyAction == .eraseLocalData ? .red : .orange)
                         }
                         HStack {
                             Button {
@@ -2348,6 +2465,60 @@ struct SecurityCenterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var advancedProtectionModeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield")
+                    .font(.title2)
+                    .foregroundStyle(store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "高级保护模式正在运行" : "高级保护模式未开启")
+                        .font(.headline)
+                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "当前账户已收紧自动锁定，并阻止复制、普通导出、共享导入导出、保险柜预览和文件名复制。" : "适合在借用设备、展示屏幕或处理敏感文件前开启。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
+                protectionCapability("自动锁定", "1 分钟", "timer")
+                protectionCapability("隐藏预览", "笔记与图片", "eye.slash.fill")
+                protectionCapability("阻止导出", "笔记与文件", "square.and.arrow.up")
+                protectionCapability("脱敏日志", "不暴露名称", "list.bullet.rectangle")
+            }
+
+            Button {
+                store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
+            } label: {
+                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护模式" : "开启高级保护模式", systemImage: "shield.lefthalf.filled")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .securitySection()
+    }
+
+    private func protectionCapability(_ title: String, _ value: String, _ systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.mint)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(value)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(9)
+        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func sectionTitle(_ title: String, systemImage: String) -> some View {
@@ -2803,6 +2974,11 @@ struct ChangelogView: View {
             title: "危险操作确认与窗口适配",
             dateText: "2026-07-05",
             items: [
+                "主界面新增当前账户、保护模式、自动锁定和保险柜状态条，打开后先看状态再操作。",
+                "账户与安全延续安全中心的信息层级：状态卡、账户分区、密码分区和危险操作分区更清楚。",
+                "高级数据保护改成模式卡，明确显示会收紧自动锁定并阻止复制、导出、共享和预览路径。",
+                "虚假密码默认推荐进入虚假空间，直接销毁模式需要主动展开后才可选择。",
+                "保险柜导入新增队列和进度条，大文件加密移入时可以看到当前文件和处理进度。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
                 "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
                 "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",

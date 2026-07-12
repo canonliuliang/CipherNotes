@@ -134,6 +134,11 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 
 ### 1.0.4 - 危险操作确认与窗口适配
 
+- Added a main workspace status strip for current account, protection mode, auto-lock, and vault count.
+- Reworked Account & Security to follow the clearer Security Center hierarchy: status cards, account section, password section, and danger zone.
+- Turned Advanced Data Protection into a clearer mode card that lists the blocked copy/export/share/preview paths.
+- Made decoy password setup calmer by keeping destructive erase mode behind an explicit reveal.
+- Added a vault import queue with per-file progress for large encrypted imports.
 - Improved the Account & Security danger zone: delete-account and erase-all-data now show separate confirmation requirements.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Changed Security Center and Account & Security sheets to use more flexible window sizing.

@@ -4,6 +4,33 @@ import Foundation
 import LocalAuthentication
 import UniformTypeIdentifiers
 
+enum VaultImportJobStatus: String, Sendable {
+    case encrypting
+    case finished
+    case failed
+
+    var label: String {
+        switch self {
+        case .encrypting: "正在加密"
+        case .finished: "已完成"
+        case .failed: "导入失败"
+        }
+    }
+}
+
+struct VaultImportJob: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var fileName: String
+    var byteCount: Int
+    var processedByteCount: Int
+    var status: VaultImportJobStatus
+
+    var progress: Double {
+        guard byteCount > 0 else { return status == .finished ? 1 : 0 }
+        return min(1, max(0, Double(processedByteCount) / Double(byteCount)))
+    }
+}
+
 @MainActor
 final class VaultStore: ObservableObject {
     @Published private(set) var state: VaultState
@@ -14,6 +41,7 @@ final class VaultStore: ObservableObject {
     @Published private(set) var accounts: [AccountSummary] = []
     @Published private(set) var securityLogs: [SecurityLogEntry] = []
     @Published private(set) var isDecoySession = false
+    @Published private(set) var vaultImportJobs: [VaultImportJob] = []
     @Published var recoveryCodeToShow: String?
     @Published var errorMessage: String?
     @Published var autoLockMinutes = 5
@@ -826,6 +854,7 @@ final class VaultStore: ObservableObject {
         }
         let sourceURLs = urls
         let vaultURL = vaultURL
+        let importJobs = beginVaultImportJobs(for: sourceURLs)
         let shouldImportInBackground = sourceURLs.contains { url in
             ((try? Self.fileByteCount(at: url)) ?? Self.backgroundImportThresholdBytes) >= Self.backgroundImportThresholdBytes
         }
@@ -833,7 +862,7 @@ final class VaultStore: ObservableObject {
             var importedItems: [VaultAttachment] = []
             var sourceURLsToDelete: [URL] = []
             do {
-                for url in sourceURLs {
+                for (url, job) in zip(sourceURLs, importJobs) {
                     let accessing = url.startAccessingSecurityScopedResource()
                     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                     let byteCount = try Self.fileByteCount(at: url)
@@ -842,7 +871,12 @@ final class VaultStore: ObservableObject {
                         contentType: Self.contentType(for: url),
                         byteCount: byteCount
                     )
-                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL)
+                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL) { processed in
+                        Task { @MainActor in
+                            self.updateVaultImportJob(id: job.id, processedByteCount: processed)
+                        }
+                    }
+                    finishVaultImportJob(id: job.id, status: .finished)
                     importedItems.append(item)
                     sourceURLsToDelete.append(url)
                 }
@@ -865,6 +899,7 @@ final class VaultStore: ObservableObject {
                 }
                 recordSecurityEvent(.vaultFilesImported, message: "已加密移入 \(importedItems.count) 个保险柜文件")
             } catch {
+                importJobs.forEach { finishVaultImportJob(id: $0.id, status: .failed) }
                 importedItems.forEach { try? Self.removeAttachmentBlob(id: $0.id, userID: currentUserID, vaultURL: vaultURL) }
                 errorMessage = "移入保险柜失败：\(error.localizedDescription)"
                 recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
@@ -877,7 +912,7 @@ final class VaultStore: ObservableObject {
             var importedItems: [VaultAttachment] = []
             var sourceURLsToDelete: [URL] = []
             do {
-                for url in sourceURLs {
+                for (url, job) in zip(sourceURLs, importJobs) {
                     let accessing = url.startAccessingSecurityScopedResource()
                     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                     let byteCount = try Self.fileByteCount(at: url)
@@ -886,7 +921,14 @@ final class VaultStore: ObservableObject {
                         contentType: Self.contentType(for: url),
                         byteCount: byteCount
                     )
-                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL)
+                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL) { processed in
+                        Task { @MainActor in
+                            self.updateVaultImportJob(id: job.id, processedByteCount: processed)
+                        }
+                    }
+                    await MainActor.run {
+                        self.finishVaultImportJob(id: job.id, status: .finished)
+                    }
                     importedItems.append(item)
                     sourceURLsToDelete.append(url)
                 }
@@ -926,10 +968,39 @@ final class VaultStore: ObservableObject {
                     try? Self.removeAttachmentBlob(id: item.id, userID: currentUserID, vaultURL: vaultURL)
                 }
                 await MainActor.run {
+                    importJobs.forEach { self.finishVaultImportJob(id: $0.id, status: .failed) }
                     self.errorMessage = "移入保险柜失败：\(error.localizedDescription)"
                     self.recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
                 }
             }
+        }
+    }
+
+    private func beginVaultImportJobs(for urls: [URL]) -> [VaultImportJob] {
+        let jobs = urls.map { url in
+            VaultImportJob(
+                id: UUID(),
+                fileName: Self.sanitizedFileName(url.lastPathComponent),
+                byteCount: (try? Self.fileByteCount(at: url)) ?? 0,
+                processedByteCount: 0,
+                status: .encrypting
+            )
+        }
+        vaultImportJobs.insert(contentsOf: jobs, at: 0)
+        vaultImportJobs = Array(vaultImportJobs.prefix(12))
+        return jobs
+    }
+
+    private func updateVaultImportJob(id: UUID, processedByteCount: Int) {
+        guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }) else { return }
+        vaultImportJobs[index].processedByteCount = processedByteCount
+    }
+
+    private func finishVaultImportJob(id: UUID, status: VaultImportJobStatus) {
+        guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }) else { return }
+        vaultImportJobs[index].status = status
+        if status == .finished {
+            vaultImportJobs[index].processedByteCount = vaultImportJobs[index].byteCount
         }
     }
 
@@ -1104,7 +1175,15 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    nonisolated private static func writeAttachmentFile(from sourceURL: URL, for attachmentID: UUID, userID: UUID, rawKey: Data, byteCount: Int, vaultURL: URL) throws {
+    nonisolated private static func writeAttachmentFile(
+        from sourceURL: URL,
+        for attachmentID: UUID,
+        userID: UUID,
+        rawKey: Data,
+        byteCount: Int,
+        vaultURL: URL,
+        progress: @Sendable (Int) -> Void = { _ in }
+    ) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID, vaultURL: vaultURL), withIntermediateDirectories: true)
         let destinationURL = attachmentURL(for: attachmentID, userID: userID, vaultURL: vaultURL)
         try? FileManager.default.removeItem(at: destinationURL)
@@ -1116,10 +1195,13 @@ final class VaultStore: ObservableObject {
             try? output.close()
         }
         try writeAttachmentHeader(to: output, byteCount: byteCount)
+        var processedByteCount = 0
         while true {
             let chunk = try input.read(upToCount: attachmentChunkSize) ?? Data()
             if chunk.isEmpty { break }
             try writeEncryptedAttachmentChunk(chunk, to: output, rawKey: rawKey)
+            processedByteCount += chunk.count
+            progress(processedByteCount)
         }
     }
 
