@@ -1833,49 +1833,58 @@ struct VaultView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            vaultHeader
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                vaultHeader
 
-            if intakeActive {
-                VaultIntakeVisual()
-                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
-            }
+                if intakeActive {
+                    VaultIntakeVisual()
+                        .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+                }
 
-            if !store.vaultImportJobs.isEmpty {
-                vaultImportQueue
-                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
-            }
+                if !store.vaultImportJobs.isEmpty {
+                    vaultImportQueue
+                        .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+                }
 
-            TextField("搜索保险柜文件", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .disabled(store.currentAccountAdvancedDataProtectionEnabled)
-                .overlay(alignment: .trailing) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("搜索保险柜文件", text: $query)
+                        .textFieldStyle(.plain)
+                        .disabled(store.currentAccountAdvancedDataProtectionEnabled)
                     if store.currentAccountAdvancedDataProtectionEnabled {
-                        Text("最高保护已隐藏文件名搜索")
+                        Label("最高保护已隐藏文件名", systemImage: "eye.slash")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .padding(.trailing, 8)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 34)
+                .background(.background.opacity(0.72), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(.primary.opacity(0.12), lineWidth: 1)
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    vaultFilterRow
+                    VStack(alignment: .leading, spacing: 8) {
+                        vaultFilterPicker
+                        vaultCountText
                     }
                 }
 
-            ViewThatFits(in: .horizontal) {
-                vaultFilterRow
-                VStack(alignment: .leading, spacing: 8) {
-                    vaultFilterPicker
-                    vaultCountText
-                }
-            }
-
-            if filteredItems.isEmpty {
-                ContentUnavailableView(
-                    store.vaultItems.isEmpty ? "保险柜是空的" : "没有匹配的文件",
-                    systemImage: "lock.rectangle",
-                    description: Text("点“移入照片或文件”，应用会先加密保存，再删除原文件。")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
+                if filteredItems.isEmpty {
+                    ContentUnavailableView(
+                        store.vaultItems.isEmpty ? "保险柜是空的" : "没有匹配的文件",
+                        systemImage: "lock.rectangle",
+                        description: Text("点“移入照片或文件”，应用会先加密保存，再删除原文件。")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 14)], spacing: 14) {
                         ForEach(filteredItems) { item in
                             VaultItemCard(item: item)
                                 .environmentObject(store)
@@ -1883,12 +1892,13 @@ struct VaultView: View {
                                 .macHoverLift(disabled: reduceMotion)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: filteredItems.map(\.id))
                 }
-                .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: filteredItems.map(\.id))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(24)
         }
-        .padding(24)
+        .scrollIndicators(.automatic)
         .overlay(alignment: .bottom) {
             if let ceremonyMessage {
                 CeremonyToast(
@@ -1979,7 +1989,7 @@ struct VaultView: View {
             }
         }
         .pickerStyle(.segmented)
-        .frame(minWidth: 320, maxWidth: 430)
+        .frame(maxWidth: 460)
     }
 
     private var vaultCountText: some View {
@@ -2118,16 +2128,21 @@ struct VaultItemCard: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.quaternary)
+                    .fill(.background.opacity(0.72))
                 if protected {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.mint)
+                    VStack(spacing: 8) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.mint)
+                        Text("最高保护已隐藏预览")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else if let preview {
                     Image(nsImage: preview)
                         .resizable()
                         .scaledToFill()
-                        .frame(height: 118)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
                     Image(systemName: systemImage)
@@ -2135,27 +2150,61 @@ struct VaultItemCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: 118)
+            .aspectRatio(1.55, contentMode: .fit)
             Text(protected ? "受保护文件" : item.fileName)
                 .font(.headline)
                 .lineLimit(2)
-            Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                Button("查看") { openInternalPreview() }
-                    .disabled(!canPreviewInternally)
-                Button(protected ? "导出已禁用" : "导出") { exportItem() }
-                    .disabled(protected)
-                Button(protected ? "复制已禁用" : "复制文件名") { copyFileName() }
-                    .disabled(protected)
-                Spacer()
-                Button("删除", role: .destructive) { store.deleteVaultItem(itemID: item.id) }
+                .frame(height: 42, alignment: .topLeading)
+                .truncationMode(.middle)
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))
+                Spacer(minLength: 4)
+                Text(item.createdAt.formatted(date: .abbreviated, time: .omitted))
             }
-            .buttonStyle(ClearButtonStyle())
             .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+
+            HStack(spacing: 8) {
+                Button {
+                    openInternalPreview()
+                } label: {
+                    Label(protected ? "查看已禁用" : "查看", systemImage: protected ? "eye.slash" : "eye")
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(protected || !canPreviewInternally)
+                .buttonStyle(ClearButtonStyle(prominence: .primary))
+
+                Menu {
+                    Button {
+                        exportItem()
+                    } label: {
+                        Label(protected ? "导出已禁用" : "导出文件", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(protected)
+                    Button {
+                        copyFileName()
+                    } label: {
+                        Label(protected ? "复制已禁用" : "复制文件名", systemImage: "doc.on.doc")
+                    }
+                    .disabled(protected)
+                    Divider()
+                    Button(role: .destructive) {
+                        store.deleteVaultItem(itemID: item.id)
+                    } label: {
+                        Label("删除文件", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 32, height: 26)
+                }
+                .menuStyle(.borderlessButton)
+                .help("更多文件操作")
+            }
         }
-        .padding(12)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -2192,7 +2241,7 @@ struct VaultItemCard: View {
     }
 
     private var canPreviewInternally: Bool {
-        isImage || isPDF || isText || isAudio || isVideo
+        !store.currentAccountAdvancedDataProtectionEnabled && (isImage || isPDF || isText || isAudio || isVideo)
     }
 
     private var systemImage: String {
@@ -2204,12 +2253,13 @@ struct VaultItemCard: View {
     }
 
     private func openInternalPreview() {
+        if store.blockAdvancedProtectionAction("高级数据保护已开启，保险柜文件预览已阻止") { return }
         guard canPreviewInternally else {
             store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
             return
         }
         if isVideo {
-            store.errorMessage = "视频暂不交给外部 App 打开；无落盘内置视频播放器将在后续版本加入"
+            store.errorMessage = "视频内置查看器正在完善，当前版本不会交给外部 App 打开"
             return
         }
         if isText && item.byteCount > 5 * 1024 * 1024 {
@@ -2277,35 +2327,60 @@ private struct VaultInternalPreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label(payload.title, systemImage: iconName)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: iconName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.mint)
+                    .frame(width: 30, height: 30)
+                    .background(.mint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(payload.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("内置查看器")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer()
-                Button("关闭") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                Button {
+                    dismiss()
+                } label: {
+                    Label("关闭", systemImage: "xmark")
+                }
+                .buttonStyle(ClearButtonStyle())
+                .keyboardShortcut(.cancelAction)
             }
-            Text("内置无落盘查看：内容只在密笺内解密显示，不交给外部 App。")
+
+            Label("内容只在密笺内解密显示，不交给外部 App。关闭后会清理预览缓存。", systemImage: "lock.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
             Divider()
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(18)
-        .frame(minWidth: 680, idealWidth: 820, minHeight: 520, idealHeight: 640)
+        .padding(20)
+        .frame(minWidth: 520, idealWidth: 780, minHeight: 420, idealHeight: 620)
     }
 
     @ViewBuilder
     private var content: some View {
         switch payload.kind {
         case .image(let image):
-            ScrollView([.horizontal, .vertical]) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(8)
+            GeometryReader { proxy in
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(
+                            minWidth: max(proxy.size.width - 24, 1),
+                            minHeight: max(proxy.size.height - 24, 1)
+                        )
+                        .padding(12)
+                }
             }
             .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         case .text(let text):
@@ -2315,9 +2390,12 @@ private struct VaultInternalPreviewView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
+            .scrollIndicators(.automatic)
             .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         case .pdf(let data):
             VaultPDFPreview(data: data)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         case .audio(let data):
             VaultAudioPreview(data: data)
