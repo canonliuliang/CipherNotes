@@ -431,6 +431,10 @@ final class VaultStore: ObservableObject {
     }
 
     func setDecoyPasswordForCurrentAccount(currentPassword: String, decoyPassword: String, confirmation: String, action: DecoyPasswordAction) {
+        guard currentAccountAdvancedDataProtectionEnabled else {
+            errorMessage = "请先开启最高保护模式，再设置虚假密码"
+            return
+        }
         guard decoyPassword == confirmation else {
             errorMessage = "两次输入的虚假密码不一致"
             return
@@ -502,6 +506,11 @@ final class VaultStore: ObservableObject {
         do {
             var file = try readVaultFile()
             guard let index = file.users.firstIndex(where: { $0.id == userID }) else { return }
+            if !enabled,
+               file.users[index].decoyPasswordSalt != nil || file.users[index].decoyPasswordVerifier != nil {
+                errorMessage = "请先关闭虚假密码，再关闭最高保护模式"
+                return
+            }
             file.users[index].advancedDataProtectionEnabled = enabled
             file.users[index].updatedAt = .now
             file.updatedAt = .now

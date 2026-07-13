@@ -2735,12 +2735,14 @@ struct SecurityCenterView: View {
                             systemImage: "timer",
                             tint: .secondary
                         )
-                        securityRow(
-                            title: "虚假密码",
-                            value: store.currentAccountDecoyPasswordEnabled ? "已开启 · \(store.currentAccountDecoyPasswordAction.label)" : "未开启",
-                            systemImage: "theatermasks.fill",
-                            tint: store.currentAccountDecoyPasswordEnabled ? .orange : .secondary
-                        )
+                        if store.currentAccountAdvancedDataProtectionEnabled {
+                            securityRow(
+                                title: "虚假密码",
+                                value: store.currentAccountDecoyPasswordEnabled ? "已开启 · \(store.currentAccountDecoyPasswordAction.label)" : "未开启",
+                                systemImage: "theatermasks.fill",
+                                tint: store.currentAccountDecoyPasswordEnabled ? .orange : .secondary
+                            )
+                        }
                         Picker("自动锁定", selection: $store.autoLockMinutes) {
                             Text("1 分钟").tag(1)
                             Text("5 分钟").tag(5)
@@ -2759,67 +2761,69 @@ struct SecurityCenterView: View {
 
                     advancedProtectionModeCard
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionTitle("虚假密码", systemImage: "theatermasks.fill")
-                        Text("输入虚假密码时，不会打开真实保险库。默认进入临时虚假空间，不读写真实数据。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        SecureField("当前账户真实密码", text: $decoyCurrentPassword)
-                            .textFieldStyle(.roundedBorder)
-                        SecureField("虚假密码", text: $decoyPassword)
-                            .textFieldStyle(.roundedBorder)
-                        SecureField("再次输入虚假密码", text: $decoyConfirmation)
-                            .textFieldStyle(.roundedBorder)
-                        Picker("触发后", selection: $decoyAction) {
-                            Text(DecoyPasswordAction.openDecoySpace.label).tag(DecoyPasswordAction.openDecoySpace)
-                            if showDecoyDestructiveMode {
-                                Text(DecoyPasswordAction.eraseLocalData.label).tag(DecoyPasswordAction.eraseLocalData)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        Toggle("显示销毁模式", isOn: Binding(
-                            get: { showDecoyDestructiveMode },
-                            set: { value in
-                                showDecoyDestructiveMode = value
-                                if !value && decoyAction == .eraseLocalData {
-                                    decoyAction = .openDecoySpace
-                                }
-                            }
-                        ))
-                        .font(.caption)
-                        if showDecoyDestructiveMode {
-                            Label(decoyAction == .eraseLocalData ? "销毁模式命中后会删除本机保险库和保险柜附件，无法撤销。" : "销毁模式只适合极端场景，默认不建议开启。", systemImage: "exclamationmark.triangle.fill")
+                    if store.currentAccountAdvancedDataProtectionEnabled {
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionTitle("虚假密码", systemImage: "theatermasks.fill")
+                            Text("输入虚假密码时，不会打开真实保险库。默认进入虚假空间，不读写真实数据。")
                                 .font(.caption)
-                                .foregroundStyle(decoyAction == .eraseLocalData ? .red : .orange)
-                        }
-                        HStack {
-                            Button {
-                                store.setDecoyPasswordForCurrentAccount(
-                                    currentPassword: decoyCurrentPassword,
-                                    decoyPassword: decoyPassword,
-                                    confirmation: decoyConfirmation,
-                                    action: decoyAction
-                                )
-                                if store.errorMessage == "虚假密码已设置" {
-                                    decoyCurrentPassword = ""
-                                    decoyPassword = ""
-                                    decoyConfirmation = ""
+                                .foregroundStyle(.secondary)
+                            SecureField("当前账户真实密码", text: $decoyCurrentPassword)
+                                .textFieldStyle(.roundedBorder)
+                            SecureField("虚假密码", text: $decoyPassword)
+                                .textFieldStyle(.roundedBorder)
+                            SecureField("再次输入虚假密码", text: $decoyConfirmation)
+                                .textFieldStyle(.roundedBorder)
+                            Picker("触发后", selection: $decoyAction) {
+                                Text(DecoyPasswordAction.openDecoySpace.label).tag(DecoyPasswordAction.openDecoySpace)
+                                if showDecoyDestructiveMode {
+                                    Text(DecoyPasswordAction.eraseLocalData.label).tag(DecoyPasswordAction.eraseLocalData)
                                 }
-                            } label: {
-                                Label(store.currentAccountDecoyPasswordEnabled ? "更新虚假密码" : "设置虚假密码", systemImage: "key.horizontal.fill")
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(decoyCurrentPassword.isEmpty || decoyPassword.isEmpty || decoyConfirmation.isEmpty)
+                            .pickerStyle(.segmented)
+                            Toggle("显示销毁模式", isOn: Binding(
+                                get: { showDecoyDestructiveMode },
+                                set: { value in
+                                    showDecoyDestructiveMode = value
+                                    if !value && decoyAction == .eraseLocalData {
+                                        decoyAction = .openDecoySpace
+                                    }
+                                }
+                            ))
+                            .font(.caption)
+                            if showDecoyDestructiveMode {
+                                Label(decoyAction == .eraseLocalData ? "销毁模式命中后会删除本机保险库和保险柜附件，无法撤销。" : "销毁模式只适合极端场景，默认不建议开启。", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(decoyAction == .eraseLocalData ? .red : .orange)
+                            }
+                            HStack {
+                                Button {
+                                    store.setDecoyPasswordForCurrentAccount(
+                                        currentPassword: decoyCurrentPassword,
+                                        decoyPassword: decoyPassword,
+                                        confirmation: decoyConfirmation,
+                                        action: decoyAction
+                                    )
+                                    if store.errorMessage == "虚假密码已设置" {
+                                        decoyCurrentPassword = ""
+                                        decoyPassword = ""
+                                        decoyConfirmation = ""
+                                    }
+                                } label: {
+                                    Label(store.currentAccountDecoyPasswordEnabled ? "更新虚假密码" : "设置虚假密码", systemImage: "key.horizontal.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(decoyCurrentPassword.isEmpty || decoyPassword.isEmpty || decoyConfirmation.isEmpty)
 
-                            Button(role: .destructive) {
-                                disableDecoyPassword()
-                            } label: {
-                                Label("关闭虚假密码", systemImage: "xmark.shield")
+                                Button(role: .destructive) {
+                                    disableDecoyPassword()
+                                } label: {
+                                    Label("关闭虚假密码", systemImage: "xmark.shield")
+                                }
+                                .disabled(!store.currentAccountDecoyPasswordEnabled)
                             }
-                            .disabled(!store.currentAccountDecoyPasswordEnabled)
                         }
+                        .securitySection()
                     }
-                    .securitySection()
 
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("快捷操作", systemImage: "wand.and.stars")
@@ -3506,12 +3510,14 @@ struct UserManagementView: View {
                 )
                 .font(.caption2)
                 .foregroundStyle(account.advancedDataProtectionEnabled ? .mint : .secondary)
-                Label(
-                    account.decoyPasswordEnabled ? "虚假密码已开启" : "虚假密码未开启",
-                    systemImage: "theatermasks"
-                )
-                .font(.caption2)
-                .foregroundStyle(account.decoyPasswordEnabled ? .orange : .secondary)
+                if account.advancedDataProtectionEnabled {
+                    Label(
+                        account.decoyPasswordEnabled ? "虚假密码已开启" : "虚假密码未开启",
+                        systemImage: "theatermasks"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(account.decoyPasswordEnabled ? .orange : .secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

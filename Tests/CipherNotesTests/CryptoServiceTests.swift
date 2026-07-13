@@ -724,6 +724,7 @@ final class CryptoServiceTests: XCTestCase {
             store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "Real", body: "Real secret")
+            store.setAdvancedDataProtectionForCurrentAccount(true)
             store.setDecoyPasswordForCurrentAccount(
                 currentPassword: "real-pass",
                 decoyPassword: "fake-pass",
@@ -766,6 +767,7 @@ final class CryptoServiceTests: XCTestCase {
             store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "Real", body: "Destroy me")
+            store.setAdvancedDataProtectionForCurrentAccount(true)
             store.setDecoyPasswordForCurrentAccount(
                 currentPassword: "real-pass",
                 decoyPassword: "wipe-pass",
@@ -780,6 +782,26 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
             XCTAssertTrue(store.accounts.isEmpty)
             XCTAssertTrue(store.notes.isEmpty)
+        }
+    }
+
+    func testDecoyPasswordRequiresAdvancedProtection() async throws {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let url = directory.appendingPathComponent("vault.json")
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = VaultStore(vaultURL: url)
+            store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
+            store.setDecoyPasswordForCurrentAccount(
+                currentPassword: "real-pass",
+                decoyPassword: "fake-pass",
+                confirmation: "fake-pass",
+                action: .openDecoySpace
+            )
+
+            XCTAssertFalse(store.currentAccountDecoyPasswordEnabled)
+            XCTAssertEqual(store.errorMessage, "请先开启最高保护模式，再设置虚假密码")
         }
     }
 }
