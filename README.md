@@ -121,6 +121,20 @@ The script runs tests, builds the release app, and updates:
 
 The repository avoids keeping an expanded `.app` bundle in `outputs` to reduce Spotlight and Git noise. Unzip the release archive when you need the app bundle.
 
+## Update The Local App
+
+For development, update the CipherNotes app installed on this Mac with:
+
+```sh
+Packaging/update-local-app.sh
+```
+
+This script runs the release build, updates `outputs`, closes the running app if needed, copies the freshly built `密笺.app` to `/Applications`, verifies the signature, and opens the updated app. If direct copying to `/Applications` is denied, it falls back to the generated installer package and may ask for your macOS password.
+
+This only updates your local Mac. Users still get updates from GitHub Releases.
+
+## Publish A Public Download
+
 Pushing source code to GitHub updates the repository and GitHub Pages, but it does not update what users download from the website by itself. The website download button points to GitHub Releases latest.
 
 To publish a new public download:
