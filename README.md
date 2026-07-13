@@ -178,6 +178,9 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 - Added an in-app manual update check that compares the current app version with GitHub Releases latest.
 - Improved vault large-file imports with cancellation, remaining-time estimates, and clearable completed import records.
 - Added no-temp-file internal vault viewers for images, text, and PDFs so protected files do not need external apps.
+- Added an in-memory audio vault player for common audio files, avoiding temporary plaintext exports and external player launch.
+- Added a Highest Protection privacy shield that covers the app and clears preview caches when the window becomes inactive.
+- Kept video files inside the vault instead of opening external apps; a hardened no-temp-file video player is planned separately.
 - Reframed Advanced Data Protection as a stricter Highest Protection mode in the security UI.
 - Added attachment-directory Spotlight prevention with `.metadata_never_index` and lock-time preview cache cleanup.
 - Improved the Account & Security danger zone: delete-account and erase-all-data now show separate confirmation requirements.

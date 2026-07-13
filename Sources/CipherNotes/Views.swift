@@ -124,6 +124,7 @@ enum VaultFilter: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @EnvironmentObject private var store: VaultStore
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("reduceMotion") private var reduceMotion = false
     @AppStorage("hasSeenCipherNotesIntro") private var hasSeenIntro = false
@@ -131,6 +132,7 @@ struct RootView: View {
     @State private var showingChangelog = false
     @State private var showingUserManagement = false
     @State private var showingSecurityCenter = false
+    @State private var privacyShieldActive = false
 
     private var appAppearance: AppAppearance {
         AppAppearance(rawValue: appAppearanceRawValue) ?? .system
@@ -157,6 +159,13 @@ struct RootView: View {
             .transition(MotionStyle.transition(reduceMotion: reduceMotion))
             .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: store.state)
             .padding(10)
+            if privacyShieldActive && store.state == .unlocked && store.currentAccountAdvancedDataProtectionEnabled {
+                PrivacyShieldOverlay {
+                    privacyShieldActive = false
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 14) {
@@ -212,6 +221,16 @@ struct RootView: View {
                 }
             }
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard store.state == .unlocked, store.currentAccountAdvancedDataProtectionEnabled else { return }
+            if newPhase != .active {
+                privacyShieldActive = true
+                store.clearSensitivePreviewCaches()
+            }
+        }
+        .onChange(of: store.currentAccountAdvancedDataProtectionEnabled) { _, enabled in
+            if !enabled { privacyShieldActive = false }
+        }
         .sheet(isPresented: Binding(get: { store.recoveryCodeToShow != nil }, set: { if !$0 { store.dismissRecoveryCode() } })) {
             RecoveryCodeView(code: store.recoveryCodeToShow ?? "") {
                 store.dismissRecoveryCode()
@@ -243,6 +262,42 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowLegalDisclosure)) { _ in
             showingLegalDisclosure = true
+        }
+    }
+}
+
+private struct PrivacyShieldOverlay: View {
+    let onReveal: () -> Void
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(.mint)
+                Text("最高保护遮罩已开启")
+                    .font(.title3.weight(.semibold))
+                Text("窗口离开活动状态后，密笺会遮住内容并清理预览缓存，减少屏幕暴露和临时查看残留。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 460)
+                Button {
+                    onReveal()
+                } label: {
+                    Label("恢复查看", systemImage: "eye.fill")
+                }
+                .buttonStyle(ClearButtonStyle(prominence: .primary))
+            }
+            .padding(30)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(.mint.opacity(0.30), lineWidth: 1)
+            }
         }
     }
 }
@@ -2231,9 +2286,17 @@ struct VaultItemCard: View {
         item.contentType?.hasPrefix("text/") == true
         || ["txt", "md", "markdown", "json", "csv", "log", "xml", "yaml", "yml"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
     }
+    private var isAudio: Bool {
+        item.contentType?.hasPrefix("audio/") == true
+        || ["mp3", "m4a", "aac", "wav", "aiff", "caf"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
+    }
+    private var isVideo: Bool {
+        item.contentType?.hasPrefix("video/") == true
+        || ["mp4", "mov", "m4v"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
+    }
 
     private var canPreviewInternally: Bool {
-        isImage || isPDF || isText
+        isImage || isPDF || isText || isAudio || isVideo
     }
 
     private var systemImage: String {
@@ -2249,8 +2312,16 @@ struct VaultItemCard: View {
             store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
             return
         }
+        if isVideo {
+            store.errorMessage = "视频暂不交给外部 App 打开；无落盘内置视频播放器将在后续版本加入"
+            return
+        }
         if isText && item.byteCount > 5 * 1024 * 1024 {
             store.errorMessage = "文本文件超过 5MB，暂不在内置查看器中打开"
+            return
+        }
+        if isAudio && item.byteCount > 50 * 1024 * 1024 {
+            store.errorMessage = "音频文件超过 50MB，暂不在内置播放器中打开"
             return
         }
         guard let data = store.internalVaultPreviewData(itemID: item.id) else { return }
@@ -2264,6 +2335,10 @@ struct VaultItemCard: View {
         }
         if isText, let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) {
             previewPayload = VaultPreviewPayload(title: item.fileName, kind: .text(text))
+            return
+        }
+        if isAudio {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .audio(data))
             return
         }
         store.errorMessage = "这个文件无法在内置查看器中打开"
@@ -2297,6 +2372,7 @@ private enum VaultPreviewKind {
     case image(NSImage)
     case text(String)
     case pdf(Data)
+    case audio(Data)
 }
 
 private struct VaultInternalPreviewView: View {
@@ -2347,6 +2423,8 @@ private struct VaultInternalPreviewView: View {
         case .pdf(let data):
             VaultPDFPreview(data: data)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case .audio(let data):
+            VaultAudioPreview(data: data)
         }
     }
 
@@ -2355,7 +2433,124 @@ private struct VaultInternalPreviewView: View {
         case .image: "photo"
         case .text: "doc.text"
         case .pdf: "doc.richtext"
+        case .audio: "waveform"
         }
+    }
+}
+
+private struct VaultAudioPreview: View {
+    @StateObject private var player: InMemoryAudioPlayer
+
+    init(data: Data) {
+        _player = StateObject(wrappedValue: InMemoryAudioPlayer(data: data))
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.mint)
+                .symbolEffect(.pulse, value: player.isPlaying)
+            VStack(spacing: 8) {
+                Slider(
+                    value: Binding(
+                        get: { player.currentTime },
+                        set: { player.seek(to: $0) }
+                    ),
+                    in: 0...max(player.duration, 1)
+                )
+                HStack {
+                    Text(player.currentTime.formattedPlaybackTime)
+                    Spacer()
+                    Text(player.duration.formattedPlaybackTime)
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+            Button {
+                player.toggle()
+            } label: {
+                Label(player.isPlaying ? "暂停" : "播放", systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+            }
+            .buttonStyle(ClearButtonStyle(prominence: .primary))
+            Text("音频由内存数据直接播放，不写入临时文件，不调用外部播放器。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(28)
+        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onDisappear { player.stopAndClear() }
+    }
+}
+
+@MainActor
+private final class InMemoryAudioPlayer: ObservableObject {
+    @Published var isPlaying = false
+    @Published var currentTime: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
+
+    private var sound: NSSound?
+    private var timer: Timer?
+
+    init(data: Data) {
+        let sound = NSSound(data: data)
+        self.sound = sound
+        duration = sound?.duration ?? 0
+    }
+
+    func toggle() {
+        guard let sound else { return }
+        if isPlaying {
+            sound.pause()
+            isPlaying = false
+            stopTimer()
+        } else {
+            sound.play()
+            isPlaying = true
+            startTimer()
+        }
+    }
+
+    func seek(to time: TimeInterval) {
+        sound?.currentTime = min(max(time, 0), duration)
+        currentTime = sound?.currentTime ?? 0
+    }
+
+    func stopAndClear() {
+        sound?.stop()
+        sound = nil
+        isPlaying = false
+        stopTimer()
+        currentTime = 0
+        duration = 0
+    }
+
+    private func startTimer() {
+        stopTimer()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let sound = self.sound else { return }
+                self.currentTime = sound.currentTime
+                if !sound.isPlaying && self.isPlaying {
+                    self.isPlaying = false
+                    self.stopTimer()
+                }
+            }
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
+private extension TimeInterval {
+    var formattedPlaybackTime: String {
+        guard isFinite && self > 0 else { return "0:00" }
+        let totalSeconds = Int(self.rounded())
+        return "\(totalSeconds / 60):\(String(format: "%02d", totalSeconds % 60))"
     }
 }
 
@@ -3457,6 +3652,9 @@ struct ChangelogView: View {
                 "安全中心新增手动检查更新：显示当前版本/build，并对比 GitHub Releases latest。",
                 "保险柜导入队列新增取消导入、剩余时间估计和清除完成记录，处理大文件更安心。",
                 "保险柜新增图片、文本和 PDF 内置无落盘查看器，最高保护模式下不用交给外部 App 打开。",
+                "保险柜新增常见音频文件的内存播放器，不写临时明文文件，不调用外部播放器。",
+                "最高保护模式下窗口离开活动状态会显示隐私遮罩，并清理保险柜预览缓存。",
+                "视频文件暂不交给外部 App 打开，后续会单独加入更硬化的无落盘视频播放器。",
                 "安全中心将高级数据保护升级为“最高保护模式”文案，强调内置查看、阻止外部导出和锁定清理。",
                 "附件目录自动写入 .metadata_never_index，减少 Spotlight 对保险柜密文目录的索引噪音。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
