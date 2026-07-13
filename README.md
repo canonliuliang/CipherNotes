@@ -14,7 +14,7 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.4` · 界面层级与外观修复.
+- Current release: `1.0.5` · 安全模型与虚假空间修复.
 - `密笺安装器.pkg`: recommended installer.
 - `密笺-macOS.zip`: portable archive.
 
@@ -27,11 +27,10 @@ Requires macOS 14 or later.
 - Equal local accounts: no administrator account, no universal password, no hidden superuser.
 - File vault for photos, PDFs, archives, scans, and large offline files.
 - Chunked vault storage: large files are encrypted in 4 MB chunks, imported in the background, and exported by streaming.
-- Touch ID convenience unlock per account, with password fallback.
 - Recovery codes for account password reset.
 - Local encrypted security log for sensitive events.
 - Advanced Data Protection mode that tightens auto-lock and blocks copying, exporting, sharing, previews, and sensitive filename exposure.
-- Decoy password option for Advanced Data Protection: open a temporary fake space or erase local data when the configured decoy password is entered.
+- Decoy password option for Highest Protection: open a separately encrypted fake space that can save its own notes/files, or erase local data when configured.
 - Local backup and restore.
 - Free: no membership, purchase flow, restore purchase, or paid switch.
 
@@ -40,7 +39,7 @@ Requires macOS 14 or later.
 CipherNotes is intentionally boring about privacy: your data stays on your Mac, the app has no account server, and the safest default is to keep private notes and files out of sync products you do not control.
 
 - Local-first by design: no remote login, sync service, analytics endpoint, or paid cloud feature.
-- Clear account boundaries: local accounts can be listed on the login screen, but each account's notes, file vault, recovery code, Touch ID key, and security log are protected separately.
+- Clear account boundaries: local accounts can be listed on the login screen, but each account's notes, file vault, recovery code, decoy space, and security log are protected separately.
 - Built for offline files: the vault stores photos, scans, PDFs, archives, and large files as encrypted chunks instead of loading the whole file into memory.
 - Defensive UX: Advanced Data Protection hides previews, blocks export/share/copy paths, tightens auto-lock, and writes local security events without leaking note titles or filenames.
 - Predictable updates: public downloads come only from GitHub Releases, so every installer has release notes, version metadata, and reproducible packaging steps.
@@ -128,8 +127,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.4
-git push origin v1.0.4
+git tag v1.0.5
+git push origin v1.0.5
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -150,11 +149,26 @@ The `Release` workflow validates the version, runs the package script, creates o
 
 This keeps the app version, GitHub download page, website, README, and in-app update log aligned before users see a release.
 
+## Version Rule
+
+- Patch version, for example `1.0.4` to `1.0.5`: any user-visible feature, security behavior, data model, legal text, or release process change.
+- Build number, for example `29` to `30`: every packaging iteration, even when the marketing version stays the same.
+- GitHub Release tag must match `Packaging/release.env`. Users only get a new installer after the matching Release is created or updated.
+
 ## Upgrade From Older Vaults
 
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.5 - 安全模型与虚假空间修复
+
+- Removed device biometric unlock from the product surface; login now uses account password plus recovery code only.
+- Made decoy spaces persistent and separately encrypted, so decoy notes and vault files can be saved without touching real data.
+- Fixed login mode switcher height so switching between login, registration, and recovery no longer makes the panel jump.
+- Made Highest Protection enable/disable buttons visually distinct instead of using the same color for opposite actions.
+- Expanded the legal/privacy disclosure with clearer threat boundaries and limitations.
+- Clarified the version rule: feature/security changes get a new patch version; build numbers only track packaging iterations.
 
 ### 1.0.4 - 界面层级与外观修复
 
@@ -198,7 +212,7 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 ### 1.0.2 - 虚假密码与清晰按钮
 
 - Added Advanced Data Protection decoy password actions for fake-space entry or local data destruction.
-- Added a non-persistent decoy space that does not read or write the real vault.
+- Added an early decoy space that did not read the real vault.
 - Improved button contrast for the bottom toolbar, vault cards, account rows, Security Center sections, and security log rows.
 - Updated the in-app changelog so recent security changes are visible inside the app.
 
@@ -217,7 +231,7 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 - Added local encrypted security logs in Security Center.
 - Added Advanced Data Protection blocking for copy, export, sharing, vault preview, vault export, and sensitive filename copying.
 - Added Advanced Data Protection decoy password actions for fake-space entry or local data destruction.
-- Added stricter Touch ID fallback messaging without raw keychain error codes.
+- Improved local password and recovery-code messaging.
 - Added chunked encrypted vault storage for large files.
 - Added backup and restore authorization with current account password and fixed confirmation text.
 - Added first-run intro, in-app changelog, legal/privacy disclosure, and release packaging flow.
@@ -237,8 +251,8 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 
 ### 0.8.x
 
-- Improved Touch ID upgrade behavior.
-- Reduced repeated keychain prompts.
+- Improved account upgrade behavior.
+- Reduced repeated system prompts.
 - Added motion preferences and calmer UI transitions.
 
 ### 0.7.x
@@ -250,7 +264,7 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 ### 0.3.0 - 0.6.x
 
 - Added multi-account login.
-- Added recovery codes, legal/privacy disclosure, encrypted shared-note import/export, Touch ID, changelog, appearance settings, sorting, duplication, editor stats, and autosave improvements.
+- Added recovery codes, legal/privacy disclosure, encrypted shared-note import/export, changelog, appearance settings, sorting, duplication, editor stats, and autosave improvements.
 
 ## License
 

@@ -1,11 +1,17 @@
-# CipherNotes 1.0.4 - 界面层级与外观修复
+# CipherNotes 1.0.5 - 安全模型与虚假空间修复
 
 ## Summary
 
-CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.4 build continues the product polish pass with clearer status, safer actions, better theme switching, and more visible feedback while writing or importing files.
+CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.5 build tightens the security model, removes device-level biometric unlock, makes the decoy space persistent, and clarifies release/version rules.
 
 ## What's Changed
 
+- Removed device biometric unlock from the app flow; CipherNotes now relies on account passwords and recovery codes.
+- Made the decoy space persistent and separately encrypted, so decoy notes and vault files can be saved without touching real account data.
+- Stabilized the login mode switcher height to avoid layout jumps between login, registration, and recovery.
+- Changed Highest Protection buttons to use different visual treatment when enabling versus disabling the mode.
+- Expanded the legal/privacy disclosure with clearer threat boundaries and limitations.
+- Defined the version rule: user-visible feature/security changes require a new patch version; builds increment for packaging iterations.
 - Added a main workspace status strip for current account, protection mode, auto-lock, and vault count.
 - Reworked Account & Security to follow the clearer Security Center hierarchy: status cards, account section, password section, and danger zone.
 - Turned Advanced Data Protection into a clearer mode card that lists the blocked copy/export/share/preview paths.
@@ -34,7 +40,7 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 - Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.
-- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.4.
+- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.5.
 - Preserved the GitHub-inspired product website and automated Release workflow from 1.0.3.
 
 ## Downloads
@@ -50,4 +56,4 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 
 ## Publishing Reminder
 
-After pushing `main`, either push tag `v1.0.4` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
+After pushing `main`, either push tag `v1.0.5` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.

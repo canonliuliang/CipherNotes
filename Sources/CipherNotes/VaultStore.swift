@@ -1,7 +1,6 @@
 import AppKit
 import CryptoKit
 import Foundation
-import LocalAuthentication
 import UniformTypeIdentifiers
 
 enum VaultImportJobStatus: String, Sendable {
@@ -87,7 +86,6 @@ final class VaultStore: ObservableObject {
     nonisolated private static let decoyVerifierContext = Data("ciphernotes-decoy-password-v1".utf8)
 
     private let vaultURL: URL
-    private let keychain: KeychainService
     private var vaultKey: Data?
     private var vaultFile: VaultFile?
     private var currentUserID: UUID?
@@ -107,17 +105,14 @@ final class VaultStore: ObservableObject {
         let recoveryCode: String
     }
 
-    var biometricsAvailable: Bool { keychain.canUseBiometrics }
-
     private static func placeholderAdminFields(rounds: UInt32 = CryptoService.defaultRounds) throws -> (salt: Data, verifier: Data) {
         let salt = try CryptoService.randomData(count: 16)
         _ = rounds
         return (salt, try CryptoService.randomData(count: 32))
     }
 
-    init(vaultURL: URL? = nil, keychain: KeychainService = KeychainService()) {
+    init(vaultURL: URL? = nil) {
         self.vaultURL = vaultURL ?? Self.defaultVaultURL()
-        self.keychain = keychain
         state = Self.initialState(for: self.vaultURL)
         userCount = Self.userCount(at: self.vaultURL)
         accounts = Self.accountSummaries(at: self.vaultURL)
@@ -127,7 +122,7 @@ final class VaultStore: ObservableObject {
         seedDemoVaultIfRequested()
     }
 
-    func migrateLegacyVault(username: String, oldPassword: String, enableTouchID: Bool = false) {
+    func migrateLegacyVault(username: String, oldPassword: String) {
         let normalizedUsername: String
         do {
             normalizedUsername = try validateUsernameFormat(username)
@@ -150,14 +145,6 @@ final class VaultStore: ObservableObject {
             let compatibility = try Self.placeholderAdminFields()
             var built = try makeUser(username: normalizedUsername, displayName: Self.displayName(for: username), password: oldPassword, existingVaultKey: rawKey, existingEncryptedNotes: legacy.encryptedNotes)
             built.user.role = .standard
-            if enableTouchID && biometricsAvailable {
-                do {
-                    try keychain.saveVaultKey(rawKey, for: built.user.id)
-                    built.user.touchIDEnabled = true
-                } catch {
-                    built.user.touchIDEnabled = false
-                }
-            }
             let file = VaultFile(
                 version: Self.vaultVersion,
                 rounds: CryptoService.defaultRounds,
@@ -209,7 +196,6 @@ final class VaultStore: ObservableObject {
         do {
             let file = try readVaultFile()
             try validateCurrentUserPassword(currentPassword, against: file)
-            keychain.deleteAllVaultKeys()
             if FileManager.default.fileExists(atPath: vaultURL.path) {
                 try FileManager.default.removeItem(at: vaultURL)
             }
@@ -240,8 +226,7 @@ final class VaultStore: ObservableObject {
     func registerUser(
         username: String,
         password: String,
-        confirmation: String,
-        enableTouchID: Bool = false
+        confirmation: String
     ) {
         let normalizedUsername: String
         do {
@@ -276,16 +261,6 @@ final class VaultStore: ObservableObject {
             let emptyNotes = try CryptoService.seal(try JSONEncoder().encode(VaultPayload(notes: [], vaultItems: [])), using: SymmetricKey(data: rawKey))
             var built = try makeUser(username: normalizedUsername, displayName: Self.displayName(for: username), password: password, existingVaultKey: rawKey, existingEncryptedNotes: emptyNotes)
             built.user.role = .standard
-            var touchIDWarning: String?
-            if enableTouchID {
-                do {
-                    try keychain.saveVaultKey(rawKey, for: built.user.id)
-                    built.user.touchIDEnabled = true
-                } catch {
-                    built.user.touchIDEnabled = false
-                    touchIDWarning = "用户已注册，但 Touch ID 暂未启用。你仍可用密码登录。"
-                }
-            }
             file.users.append(built.user)
             file.updatedAt = .now
             try write(file)
@@ -294,7 +269,7 @@ final class VaultStore: ObservableObject {
             recordSecurityEvent(.accountCreated, message: "本地账户已创建")
             userCount = file.users.count
             refreshAccounts(from: file)
-            errorMessage = touchIDWarning
+            errorMessage = nil
             touchActivity()
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "注册失败"
@@ -408,52 +383,8 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    func unlockWithTouchID(userID: UUID) async {
-        do {
-            let file = try readVaultFile()
-            guard let user = file.users.first(where: { $0.id == userID }) else {
-                throw VaultError.invalidUsername
-            }
-            let rawKey = try await keychain.readVaultKeyAfterBiometrics(for: user.id)
-            try finishUnlock(file: file, user: user, rawKey: rawKey, username: user.displayName ?? "本地账户")
-            recordSecurityEvent(.loginSucceeded, message: "账户已用 Touch ID 解锁")
-        } catch is CancellationError {
-            errorMessage = nil
-        } catch let error as LAError where error.code == .userCancel || error.code == .appCancel || error.code == .systemCancel {
-            errorMessage = nil
-        } catch VaultError.invalidPassword {
-            keychain.deleteVaultKey(for: userID)
-            setTouchIDEnabled(false, for: userID)
-            recordSecurityEvent(.touchIDDowngraded, result: .failure, message: "Touch ID 密钥失效，已回到密码登录")
-            errorMessage = "Touch ID 密钥已失效，请用密码登录后重新启用"
-        } catch VaultError.touchIDNotConfigured {
-            setTouchIDEnabled(false, for: userID)
-            recordSecurityEvent(.touchIDDowngraded, result: .failure, message: "Touch ID 需要重新启用")
-            errorMessage = "Touch ID 需要重新启用，请用密码登录后再开启"
-        } catch {
-            setTouchIDEnabled(false, for: userID)
-            recordSecurityEvent(.touchIDFailed, result: .failure, message: "Touch ID 暂不可用，已回到密码登录")
-            errorMessage = "Touch ID 暂不可用，请使用账户密码登录"
-        }
-    }
-
-    func canUseTouchID(userID: UUID?) -> Bool {
-        guard let userID, biometricsAvailable else { return false }
-        return isTouchIDEnabled(userID: userID)
-    }
-
-    func isTouchIDEnabled(userID: UUID?) -> Bool {
-        guard let userID else { return false }
-        if let user = vaultFile?.users.first(where: { $0.id == userID }) { return user.touchIDEnabled }
-        return accounts.first(where: { $0.id == userID })?.touchIDEnabled == true
-    }
-
     var currentAccountAdvancedDataProtectionEnabled: Bool {
         isAdvancedDataProtectionEnabled(userID: currentUserID)
-    }
-
-    var currentAccountTouchIDEnabled: Bool {
-        isTouchIDEnabled(userID: currentUserID)
     }
 
     var currentAccountID: UUID? {
@@ -564,49 +495,6 @@ final class VaultStore: ObservableObject {
             errorMessage = "虚假密码已关闭"
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "关闭虚假密码失败"
-        }
-    }
-
-    func enableTouchID() {
-        guard let vaultKey, let currentUserID else { return }
-        do {
-            try keychain.saveVaultKey(vaultKey, for: currentUserID)
-            setTouchIDEnabled(true, for: currentUserID)
-            recordSecurityEvent(.touchIDEnabled, message: "当前账户已启用 Touch ID")
-            errorMessage = "Touch ID 已为当前账户启用"
-        } catch {
-            setTouchIDEnabled(false, for: currentUserID)
-            recordSecurityEvent(.touchIDDowngraded, result: .failure, message: "Touch ID 暂不可用，仍可用密码登录")
-            errorMessage = "Touch ID 暂不可用，请使用账户密码登录"
-        }
-    }
-
-    func disableTouchID() {
-        guard let currentUserID else { return }
-        disableTouchID(userID: currentUserID)
-    }
-
-    func disableTouchID(userID: UUID) {
-        keychain.deleteVaultKey(for: userID)
-        setTouchIDEnabled(false, for: userID)
-        if userID == currentUserID {
-            recordSecurityEvent(.touchIDDisabled, message: "当前账户已关闭 Touch ID")
-        }
-        errorMessage = "Touch ID 已为该账户关闭"
-    }
-
-    private func setTouchIDEnabled(_ enabled: Bool, for userID: UUID) {
-        do {
-            var file = try readVaultFile()
-            guard let index = file.users.firstIndex(where: { $0.id == userID }) else { return }
-            file.users[index].touchIDEnabled = enabled
-            file.users[index].updatedAt = .now
-            file.updatedAt = .now
-            try write(file)
-            vaultFile = file
-            refreshAccounts(from: file)
-        } catch {
-            errorMessage = "更新 Touch ID 状态失败：\(error.localizedDescription)"
         }
     }
 
@@ -1196,7 +1084,6 @@ final class VaultStore: ObservableObject {
             guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
                 throw VaultError.invalidUsername
             }
-            keychain.deleteVaultKey(for: currentUserID)
             try? FileManager.default.removeItem(at: attachmentDirectory(for: currentUserID))
             file.users.remove(at: index)
             file.updatedAt = .now
@@ -1516,13 +1403,19 @@ final class VaultStore: ObservableObject {
         touchActivity()
     }
 
-    private func finishDecoyUnlock(file: VaultFile, user: UserRecord) {
+    private func finishDecoyUnlock(file: VaultFile, user: UserRecord, decoyKey: Data) throws {
+        let payload: VaultPayload
+        if let encrypted = user.decoyEncryptedNotes {
+            payload = try decodePayload(from: encrypted, rawKey: decoyKey)
+        } else {
+            payload = VaultPayload(notes: [], vaultItems: [], securityLogs: [])
+        }
         imagePreviewCache.removeAll(keepingCapacity: false)
-        notes = []
-        vaultItems = []
-        securityLogs = []
+        notes = payload.notes
+        vaultItems = payload.vaultItems
+        securityLogs = Array(payload.securityLogs.sorted { $0.timestamp > $1.timestamp }.prefix(Self.maxSecurityLogEntries))
         vaultFile = file
-        vaultKey = nil
+        vaultKey = decoyKey
         currentUserID = user.id
         signedInUsername = user.displayName ?? "本地账户"
         isDecoySession = true
@@ -1554,10 +1447,16 @@ final class VaultStore: ObservableObject {
     }
 
     private func handleDecoyPassword(_ password: String, user: UserRecord, file: VaultFile) -> Bool {
-        guard isDecoyPassword(password, for: user, rounds: file.rounds) else { return false }
+        guard isDecoyPassword(password, for: user, rounds: file.rounds),
+              let decoyKey = try? decoyKey(password: password, for: user, rounds: file.rounds) else { return false }
         switch user.decoyPasswordAction {
         case .openDecoySpace:
-            finishDecoyUnlock(file: file, user: user)
+            do {
+                try finishDecoyUnlock(file: file, user: user, decoyKey: decoyKey)
+            } catch {
+                errorMessage = "虚假空间无法打开"
+                return false
+            }
         case .eraseLocalData:
             destroyLocalVaultAfterDecoyPassword()
         }
@@ -1574,7 +1473,6 @@ final class VaultStore: ObservableObject {
     }
 
     private func destroyLocalVaultAfterDecoyPassword() {
-        keychain.deleteAllVaultKeys()
         try? FileManager.default.removeItem(at: vaultURL)
         try? FileManager.default.removeItem(at: attachmentsRootURL())
         vaultFile = nil
@@ -1599,6 +1497,12 @@ final class VaultStore: ObservableObject {
         var input = key.withUnsafeBytes { Data($0) }
         input.append(decoyVerifierContext)
         return Data(SHA256.hash(data: input))
+    }
+
+    private func decoyKey(password: String, for user: UserRecord, rounds: UInt32) throws -> Data? {
+        guard let salt = user.decoyPasswordSalt else { return nil }
+        let key = try CryptoService.deriveKey(password: password, salt: salt, rounds: rounds)
+        return key.withUnsafeBytes { Data($0) }
     }
 
     private func decodeNotes(from encryptedNotes: Data, rawKey: Data) throws -> [Note] {
@@ -1697,7 +1601,6 @@ final class VaultStore: ObservableObject {
 
     private func persist() {
         guard var file = vaultFile, let vaultKey, let currentUserID else { return }
-        guard !isDecoySession else { return }
         do {
             guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else { throw VaultError.corruptVault }
             let payload = VaultPayload(notes: notes.map { note in
@@ -1705,7 +1608,12 @@ final class VaultStore: ObservableObject {
                 clean.attachments = []
                 return clean
             }, vaultItems: vaultItems, securityLogs: securityLogs)
-            file.users[index].encryptedNotes = try CryptoService.seal(try JSONEncoder().encode(payload), using: SymmetricKey(data: vaultKey))
+            let encryptedPayload = try CryptoService.seal(try JSONEncoder().encode(payload), using: SymmetricKey(data: vaultKey))
+            if isDecoySession {
+                file.users[index].decoyEncryptedNotes = encryptedPayload
+            } else {
+                file.users[index].encryptedNotes = encryptedPayload
+            }
             file.users[index].updatedAt = .now
             file.updatedAt = .now
             try write(file)

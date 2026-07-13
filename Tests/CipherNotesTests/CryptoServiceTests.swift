@@ -351,7 +351,7 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
-    func testUserRecordTouchIDMetadataDefaultsToDisabledForOldVaults() throws {
+    func testUserRecordLegacyShortcutMetadataDefaultsToDisabledForOldVaults() throws {
         let rawKey = try CryptoService.randomData(count: 32)
         let passwordSalt = try CryptoService.randomData(count: 16)
         let passwordKey = try CryptoService.deriveKey(password: "pass", salt: passwordSalt, rounds: CryptoService.defaultRounds)
@@ -714,7 +714,7 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
-    func testDecoyPasswordOpensNonPersistentDecoySpace() async throws {
+    func testDecoyPasswordOpensPersistentEncryptedDecoySpace() async throws {
         await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
@@ -746,6 +746,13 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.notes.count, 1)
             XCTAssertEqual(store.notes.first?.title, "Real")
             XCTAssertEqual(store.notes.first?.body, "Real secret")
+            store.lock()
+
+            XCTAssertTrue(store.unlock(username: "owner", password: "fake-pass"))
+            XCTAssertTrue(store.isDecoySession)
+            XCTAssertEqual(store.notes.count, 1)
+            XCTAssertEqual(store.notes.first?.title, "Fake")
+            XCTAssertEqual(store.notes.first?.body, "Fake content")
         }
     }
 

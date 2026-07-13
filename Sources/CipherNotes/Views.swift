@@ -536,40 +536,6 @@ struct VaultSealAnimation: View {
     }
 }
 
-struct TouchIDScanView: View {
-    @AppStorage("reduceMotion") private var reduceMotion = false
-    @State private var scanning = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .stroke(.mint.opacity(0.24), lineWidth: 1)
-                    .scaleEffect(scanning && !reduceMotion ? 1.42 : 0.86)
-                    .opacity(scanning ? 0 : 1)
-                Image(systemName: "touchid")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.mint)
-                    .symbolEffect(.pulse, options: .repeating, value: scanning)
-            }
-            .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("正在确认 Touch ID")
-                    .font(.headline)
-                Text("验证通过后会立即解锁本地保险库")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.mint.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onAppear {
-            scanning = true
-        }
-    }
-}
-
 struct VaultIntakeVisual: View {
     @AppStorage("reduceMotion") private var reduceMotion = false
     @State private var sealed = false
@@ -663,7 +629,6 @@ struct MigrationView: View {
     @EnvironmentObject private var store: VaultStore
     @State private var username = ""
     @State private var oldPassword = ""
-    @State private var enableTouchID = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -677,18 +642,11 @@ struct MigrationView: View {
                     .textContentType(.username)
                 SecureField("旧版主密码 / 新用户登录密码", text: $oldPassword)
                     .textFieldStyle(.roundedBorder)
-                if store.biometricsAvailable {
-                    Toggle("迁移后为这个账户启用 Touch ID", isOn: $enableTouchID)
-                    Text("Touch ID 是这台 Mac 的系统验证，不区分密笺用户；多人共用设备时建议关闭。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
                 ErrorText(store.errorMessage)
                 Button("升级并进入") {
                     store.migrateLegacyVault(
                         username: username,
-                        oldPassword: oldPassword,
-                        enableTouchID: enableTouchID
+                        oldPassword: oldPassword
                     )
                     oldPassword = ""
                 }
@@ -775,9 +733,6 @@ struct UnlockView: View {
     @State private var confirmation = ""
     @State private var recoveryCode = ""
     @State private var selectedAccountID: UUID?
-    @State private var enableTouchID = false
-    @State private var enableTouchIDAfterPasswordLogin = false
-    @State private var touchIDUnlocking = false
     @FocusState private var focused: Bool
 
     private var selectedAccount: AccountSummary? {
@@ -799,6 +754,8 @@ struct UnlockView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .controlSize(.regular)
+                .frame(height: 30)
 
                 ZStack {
                     if mode == .login {
@@ -813,6 +770,7 @@ struct UnlockView: View {
                     }
                 }
                 .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: mode)
+                .frame(minHeight: 300, alignment: .top)
                 ErrorText(store.errorMessage)
             }
             .glassPanel()
@@ -834,7 +792,6 @@ struct UnlockView: View {
             }
         }
         .onChange(of: selectedAccountID) { _, _ in
-            enableTouchIDAfterPasswordLogin = false
             password = ""
         }
     }
@@ -861,38 +818,16 @@ struct UnlockView: View {
             if let selectedAccount {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Image(systemName: store.isTouchIDEnabled(userID: selectedAccount.id) ? "touchid" : "person.crop.circle")
-                            .foregroundStyle(store.isTouchIDEnabled(userID: selectedAccount.id) ? .mint : .secondary)
+                        Image(systemName: "person.crop.circle")
+                            .foregroundStyle(.secondary)
                         Text(selectedAccount.displayName)
                             .font(.caption)
                         Spacer()
-                        Text(store.isTouchIDEnabled(userID: selectedAccount.id) ? "Touch ID 已启用" : "密码登录")
+                        Text("密码登录")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    if store.canUseTouchID(userID: selectedAccountID) {
-                        Button {
-                            touchIDUnlocking = true
-                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                            Task {
-                                await store.unlockWithTouchID(userID: selectedAccount.id)
-                                await MainActor.run { touchIDUnlocking = false }
-                            }
-                        } label: {
-                            Label("使用 Touch ID 登录所选账户", systemImage: "touchid")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if store.biometricsAvailable && !store.accounts.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle("密码登录成功后启用 / 修复 Touch ID", isOn: $enableTouchIDAfterPasswordLogin)
-                            Text("如果旧版曾经可以用 Touch ID，这里不会偷偷读取旧钥匙串；用密码进一次后会写入新版 Touch ID，之后按钮会回来。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Text("Touch ID 只负责这台 Mac 的系统验证，不会替你区分密笺里的不同用户。")
+                    Text("本版本只使用账户密码和恢复码，不再使用设备级生物识别解锁。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -902,10 +837,6 @@ struct UnlockView: View {
             SecureField("用户密码", text: $password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(unlock)
-            if touchIDUnlocking {
-                TouchIDScanView()
-                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
-            }
             Button("登录", action: unlock)
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .frame(maxWidth: .infinity)
@@ -935,12 +866,6 @@ struct UnlockView: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(register)
             PasswordStrengthIndicator(password: password)
-            if store.biometricsAvailable {
-                Toggle("注册后启用 Touch ID", isOn: $enableTouchID)
-                Text("Touch ID 是设备级验证；如果这台 Mac 有多人录入指纹，请不要为隐私账户启用。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
             Button("注册并进入", action: register)
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .frame(maxWidth: .infinity)
@@ -984,10 +909,6 @@ struct UnlockView: View {
         if succeeded {
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             password = ""
-            if enableTouchIDAfterPasswordLogin {
-                store.enableTouchID()
-                enableTouchIDAfterPasswordLogin = false
-            }
         }
     }
 
@@ -995,8 +916,7 @@ struct UnlockView: View {
         store.registerUser(
             username: username,
             password: password,
-            confirmation: confirmation,
-            enableTouchID: enableTouchID
+            confirmation: confirmation
         )
         if store.state == .unlocked {
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
@@ -1398,17 +1318,6 @@ struct NotesView: View {
         Button("备份保险库…") { backupVault() }
         Button("从备份还原…") { restoreVault() }
         Divider()
-        if store.biometricsAvailable {
-            Button {
-                if store.currentAccountTouchIDEnabled {
-                    store.disableTouchID()
-                } else {
-                    store.enableTouchID()
-                }
-            } label: {
-                Label(store.currentAccountTouchIDEnabled ? "关闭当前账户 Touch ID" : "为当前账户启用 Touch ID", systemImage: "touchid")
-            }
-        }
         Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式") {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
         }
@@ -1459,20 +1368,7 @@ struct NotesView: View {
         Button("导入共享文件") { chooseSharedFile() }
             .disabled(store.currentAccountAdvancedDataProtectionEnabled)
         Divider()
-        if store.biometricsAvailable {
-            Button {
-                if store.currentAccountTouchIDEnabled {
-                    store.disableTouchID()
-                } else {
-                    store.enableTouchID()
-                }
-            } label: {
-                Label(store.currentAccountTouchIDEnabled ? "关闭当前账户 Touch ID" : "为当前账户启用 Touch ID", systemImage: "touchid")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-        }
-        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级数据保护" : "开启高级数据保护") {
+        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式") {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
         }
         Button("生成新的恢复码") {
@@ -2676,6 +2572,9 @@ struct LegalDisclosureView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("密笺是本地加密记事工具，不提供法律、财务、医疗、合规或取证建议。你在应用中保存、导入、导出或共享的内容由你自行负责。")
                     Text("应用不上传笔记、不提供云端恢复，也不保存明文用户密码、恢复码或共享密码。为方便登录页选择账户，账户显示名会保存在本机保险库文件中。忘记用户密码且没有恢复码时，相关笔记可能无法恢复。")
+                    Text("最高保护模式会减少应用内预览、导出、复制、外部打开和失焦暴露，但它不是法律豁免、反取证承诺或对抗恶意软件的保证。拥有系统权限的恶意程序、屏幕录制、键盘记录、内存取证、备份软件或系统级日志仍可能造成泄露。")
+                    Text("虚假密码和虚假空间用于降低被旁观或被迫临时解锁时的暴露风险；如果你选择销毁本地数据，该操作不可撤销。请自行确认这种设置是否符合你的法律义务、组织规定和实际风险。")
+                    Text("在其他 App 中打开、导出或共享文件可能留下最近项目、缓存、缩略图、下载记录或收件记录。密笺只能控制自身行为，不能保证第三方 App 或操作系统组件不留下痕迹。")
                     Text("共享文件采用你输入的共享密码加密；如果共享密码过短、重复使用或通过不安全渠道发送，可能降低保护强度。请只共享你有权共享的内容。")
                     Text("本应用按“现状”提供，不保证适用于任何特定用途。使用前请自行确认是否符合你的组织、地区和行业要求。")
                 }
@@ -2691,7 +2590,7 @@ struct LegalDisclosureView: View {
             }
         }
         .padding(24)
-        .frame(width: 560, height: 430)
+        .frame(width: 620, height: 520)
     }
 }
 
@@ -2755,12 +2654,6 @@ struct SecurityCenterView: View {
                             tint: store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary
                         )
                         securityRow(
-                            title: "Touch ID",
-                            value: store.currentAccountTouchIDEnabled ? "当前账号已启用" : (store.biometricsAvailable ? "当前账号未启用" : "这台 Mac 暂不可用"),
-                            systemImage: "touchid",
-                            tint: store.currentAccountTouchIDEnabled ? .mint : .secondary
-                        )
-                        securityRow(
                             title: "自动锁定",
                             value: "\(store.autoLockMinutes) 分钟",
                             systemImage: "timer",
@@ -2784,20 +2677,6 @@ struct SecurityCenterView: View {
                             Text("最高保护模式开启时，自动锁定固定为 1 分钟。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        }
-                        if store.biometricsAvailable {
-                            Button {
-                                if store.currentAccountTouchIDEnabled {
-                                    store.disableTouchID()
-                                } else {
-                                    store.enableTouchID()
-                                }
-                            } label: {
-                                Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .securitySection()
@@ -2966,21 +2845,9 @@ struct SecurityCenterView: View {
             Button {
                 store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
             } label: {
-                                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护" : "开启最高保护", systemImage: "shield.lefthalf.filled")
+                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护" : "开启最高保护", systemImage: "shield.lefthalf.filled")
             }
-            .buttonStyle(.borderedProminent)
-            if store.biometricsAvailable {
-                Button {
-                    if store.currentAccountTouchIDEnabled {
-                        store.disableTouchID()
-                    } else {
-                        store.enableTouchID()
-                    }
-                } label: {
-                    Label(store.currentAccountTouchIDEnabled ? "关闭 Touch ID" : "启用 Touch ID", systemImage: "touchid")
-                }
-                .buttonStyle(.borderedProminent)
-            }
+            .buttonStyle(ClearButtonStyle(prominence: store.currentAccountAdvancedDataProtectionEnabled ? .danger : .primary))
             Button {
                 store.rotateRecoveryCode()
             } label: {
@@ -3145,7 +3012,7 @@ struct SecurityCenterView: View {
             } label: {
                 Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式", systemImage: "shield.lefthalf.filled")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ClearButtonStyle(prominence: store.currentAccountAdvancedDataProtectionEnabled ? .danger : .primary))
             .controlSize(.large)
         }
         .securitySection()
@@ -3330,8 +3197,6 @@ struct SecurityLogRow: View {
             "lock.open.fill"
         case .account:
             "person.crop.circle.badge.checkmark"
-        case .touchID:
-            "touchid"
         case .advancedProtection:
             "shield.lefthalf.filled"
         case .transfer:
@@ -3397,8 +3262,8 @@ struct UserManagementView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                         accountMetric("当前账户", store.signedInUsername ?? "未登录", "person.crop.circle.fill", .mint)
                         accountMetric("本机账户", "\(store.accounts.count) 个", "person.2.fill", .blue)
-                        accountMetric("Touch ID", store.currentAccountTouchIDEnabled ? "已启用" : "未启用", "touchid", store.currentAccountTouchIDEnabled ? .mint : .secondary)
-                        accountMetric("高级保护", store.currentAccountAdvancedDataProtectionEnabled ? "已开启" : "未开启", "shield.lefthalf.filled", store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
+                        accountMetric("最高保护", store.currentAccountAdvancedDataProtectionEnabled ? "已开启" : "未开启", "shield.lefthalf.filled", store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
+                        accountMetric("虚假密码", store.currentAccountDecoyPasswordEnabled ? "已开启" : "未开启", "theatermasks.fill", store.currentAccountDecoyPasswordEnabled ? .orange : .secondary)
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
@@ -3520,7 +3385,7 @@ struct UserManagementView: View {
 
     private var deleteCurrentAccountButton: some View {
         Button("删除当前账户", role: .destructive) {
-            guard confirmWithSystem(title: "删除当前账户？", message: "这会永久删除当前账户的笔记、保险柜文件、恢复码包装密钥和 Touch ID 快捷解锁项。") else { return }
+            guard confirmWithSystem(title: "删除当前账户？", message: "这会永久删除当前账户的笔记、保险柜文件、恢复码包装密钥和虚假空间。") else { return }
             store.deleteCurrentUser(password: currentPassword, confirmationText: confirmationText)
             if store.state == .needsAdminSetup {
                 hasSeenIntro = false
@@ -3560,26 +3425,19 @@ struct UserManagementView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Label(
-                    store.canUseTouchID(userID: account.id) ? "Touch ID 已启用" : "Touch ID 未启用",
-                    systemImage: "touchid"
-                )
-                .font(.caption2)
-                .foregroundStyle(store.canUseTouchID(userID: account.id) ? .mint : .secondary)
-                Label(
-                    account.advancedDataProtectionEnabled ? "高级数据保护已开启" : "高级数据保护未开启",
+                    account.advancedDataProtectionEnabled ? "最高保护已开启" : "最高保护未开启",
                     systemImage: account.advancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
                 )
                 .font(.caption2)
                 .foregroundStyle(account.advancedDataProtectionEnabled ? .mint : .secondary)
+                Label(
+                    account.decoyPasswordEnabled ? "虚假密码已开启" : "虚假密码未开启",
+                    systemImage: "theatermasks"
+                )
+                .font(.caption2)
+                .foregroundStyle(account.decoyPasswordEnabled ? .orange : .secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if isCurrent && store.canUseTouchID(userID: account.id) {
-                Button("关闭 Touch ID") {
-                    store.disableTouchID(userID: account.id)
-                }
-                .buttonStyle(.borderedProminent)
-                .lineLimit(1)
-            }
         }
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -3626,6 +3484,20 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.5",
+            version: "1.0.5",
+            title: "安全模型与虚假空间修复",
+            dateText: "2026-07-13",
+            items: [
+                "移除设备级生物识别解锁入口，登录只保留账户密码和恢复码，避免多人共用设备时产生误解。",
+                "虚假空间改为独立加密并可保存：虚假密码进入后可以新建笔记和移入保险柜文件，但不会读写真实空间。",
+                "最高保护模式的开启与关闭按钮改为不同视觉状态，避免危险操作和保护操作看起来一样。",
+                "固定登录页登录/注册/恢复切换栏和内容区高度，切换时不再出现面板跳动。",
+                "法律与隐私声明补充威胁边界：本地加密不等于法律、取证或恶意软件防护承诺。",
+                "明确版本规则：功能、安全、数据模型或法律文案变化必须升 patch 版本，build 只表示打包迭代。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.4",
             version: "1.0.4",
@@ -3693,7 +3565,7 @@ struct ChangelogView: View {
             title: "本地安全日志与高级保护收口",
             dateText: "2026-07-05",
             items: [
-                "安全中心新增本地安全日志，记录登录、锁定、Touch ID、高级保护、导入导出和危险操作。",
+                "安全中心新增本地安全日志，记录登录、锁定、旧版快捷解锁、高级保护、导入导出和危险操作。",
                 "安全日志随当前账户加密保存，不记录笔记正文、文件内容、明文密码、恢复码或敏感文件名。",
                 "高级数据保护开启后阻止复制、普通导出、共享导入导出、保险柜预览、保险柜导出和复制保险柜文件名。",
                 "移除 Apple 密码 App 辅助保存入口，避免钥匙串权限错误影响体验。",
@@ -3711,10 +3583,10 @@ struct ChangelogView: View {
                 "账户与安全改为平等本地账户模型：账户可见但只能管理自己，危险操作需要当前账户密码和确认文字。",
                 "新增一键 release 打包脚本，自动测试、构建并更新 app、pkg、zip、说明文档和图标。",
                 "重绘应用图标，改为现代简约的蓝青 Fluent 风格。",
-                "新增安全中心，集中查看账号保护状态、自动锁定、Touch ID、恢复码、备份还原和本地数据位置。",
+                "新增安全中心，集中查看账号保护状态、自动锁定、旧版快捷解锁、恢复码、备份还原和本地数据位置。",
                 "保险柜改为分片加密存储，超大文件会后台导入并支持流式导出，不再一次性读入内存。",
                 "优化保险柜大图预览、文件权限访问和发布打包流程，减少卡顿与权限噪音。",
-                "新增首次创建保险库、Touch ID 解锁、保险柜导入和加密完成时的轻量动效与反馈。",
+                "新增首次创建保险库、旧版快捷解锁 解锁、保险柜导入和加密完成时的轻量动效与反馈。",
                 "保留首次简介、应用内更新日志、法律声明、备份还原、保险柜和共享文件等已有功能。"
             ]
         ),
@@ -3770,10 +3642,10 @@ struct ChangelogView: View {
         UpdateLogEntry(
             id: "0.8.1",
             version: "0.8.1",
-            title: "Touch ID 迁移、登录细节与 macOS 质感修补",
+            title: "旧版快捷解锁 迁移、登录细节与 macOS 质感修补",
             dateText: "2026-06-27",
             items: [
-                "旧版 Touch ID 用户可在密码登录成功后直接启用 / 修复新版 Touch ID，不再像功能凭空消失。",
+                "旧版 旧版快捷解锁 用户可在密码登录成功后直接启用 / 修复新版 旧版快捷解锁，不再像功能凭空消失。",
                 "登录失败不再清空密码，减少输错一个字符就重来的挫败感。",
                 "重做玻璃面板层次：使用更接近 macOS 的 material、边框高光、底栏分隔和克制阴影。",
                 "补上登录页、记事本 / 保险柜切换、保险柜卡片的过渡与 hover 反馈。"
@@ -3785,8 +3657,8 @@ struct ChangelogView: View {
             title: "钥匙串弹窗修复与克制动效",
             dateText: "2026-06-27",
             items: [
-                "Touch ID 状态改为保险库元数据，登录页和账户管理不再为了显示按钮读取钥匙串。",
-                "新 Touch ID 使用 app.ciphernotes.touchid-v2，旧 Touch ID 用户需用密码登录后重新启用一次。",
+                "旧版快捷解锁 状态改为保险库元数据，登录页和账户管理不再为了显示按钮读取钥匙串。",
+                "新 旧版快捷解锁 使用 app.ciphernotes.person.crop.circle-v2，旧 旧版快捷解锁 用户需用密码登录后重新启用一次。",
                 "新增克制过渡动效和减少动效设置。"
             ]
         ),
@@ -3817,11 +3689,11 @@ struct ChangelogView: View {
         UpdateLogEntry(
             id: "0.6.2",
             version: "0.6.2",
-            title: "窗口、Touch ID、安全提示与菜单栏增强",
+            title: "窗口、旧版快捷解锁、安全提示与菜单栏增强",
             dateText: "2026-06-27",
             items: [
                 "修复底部按钮可能遮挡内容的窗口显示问题，并恢复标准窗口标题栏。",
-                "明确 Touch ID 是 macOS 设备级验证；每个账户独立保存快捷解锁密钥，可单独关闭。",
+                "明确 旧版快捷解锁 是 macOS 设备级验证；每个账户独立保存快捷解锁密钥，可单独关闭。",
                 "新增笔记排序、复制内容、复制为新笔记、编辑器统计与延迟保存。",
                 "完善顶部菜单栏：笔记、保险库、外观和帮助入口更完整。"
             ]
@@ -3851,11 +3723,11 @@ struct ChangelogView: View {
         UpdateLogEntry(
             id: "0.5.0",
             version: "0.5.0",
-            title: "账户选择、Touch ID 与更新日志",
+            title: "账户选择、旧版快捷解锁 与更新日志",
             dateText: "2026-06-27",
             items: [
-                "注册和旧数据迁移时可选择为账户启用 Touch ID。",
-                "登录页改为先选择账户，再用密码或 Touch ID 登录。",
+                "注册和旧数据迁移时可选择为账户启用 旧版快捷解锁。",
+                "登录页改为先选择账户，再用密码或 旧版快捷解锁 登录。",
                 "新增更新日志入口，方便查看最近变化。"
             ]
         ),

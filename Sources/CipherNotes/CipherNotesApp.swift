@@ -102,12 +102,6 @@ struct CipherNotesApp: App {
                 Button("从备份还原…") { post(.cipherNotesRestoreVault) }
                 Button("生成新的恢复码") { store.rotateRecoveryCode() }
                     .disabled(store.state != .unlocked)
-                if store.biometricsAvailable {
-                    Button("为当前账户启用 Touch ID") { store.enableTouchID() }
-                        .disabled(store.state != .unlocked)
-                    Button("关闭当前账户 Touch ID") { store.disableTouchID() }
-                        .disabled(store.state != .unlocked)
-                }
             }
             CommandMenu("外观") {
                 Picker("外观", selection: $appAppearanceRawValue) {

@@ -141,7 +141,6 @@ enum SecurityLogCategory: String, CaseIterable, Identifiable, Codable, Sendable 
     case all
     case login
     case account
-    case touchID
     case advancedProtection
     case transfer
     case vault
@@ -154,7 +153,6 @@ enum SecurityLogCategory: String, CaseIterable, Identifiable, Codable, Sendable 
         case .all: "全部"
         case .login: "登录"
         case .account: "账户"
-        case .touchID: "Touch ID"
         case .advancedProtection: "高级保护"
         case .transfer: "导入导出"
         case .vault: "保险柜"
@@ -213,10 +211,10 @@ enum SecurityLogEventType: String, Codable, Sendable {
         case .accountCreated: "创建账户"
         case .loginSucceeded: "登录"
         case .locked: "锁定"
-        case .touchIDEnabled: "启用 Touch ID"
-        case .touchIDDisabled: "关闭 Touch ID"
-        case .touchIDFailed: "Touch ID 失败"
-        case .touchIDDowngraded: "Touch ID 降级"
+        case .touchIDEnabled: "旧版快捷解锁启用"
+        case .touchIDDisabled: "旧版快捷解锁关闭"
+        case .touchIDFailed: "旧版快捷解锁失败"
+        case .touchIDDowngraded: "旧版快捷解锁降级"
         case .passwordChanged: "修改账户密码"
         case .recoveryCodeGenerated: "生成恢复码"
         case .advancedProtectionEnabled: "开启高级保护"
@@ -249,7 +247,7 @@ enum SecurityLogEventType: String, Codable, Sendable {
         case .accountCreated, .passwordChanged, .recoveryCodeGenerated:
             return .account
         case .touchIDEnabled, .touchIDDisabled, .touchIDFailed, .touchIDDowngraded:
-            return .touchID
+            return .account
         case .advancedProtectionEnabled, .advancedProtectionDisabled, .protectedActionBlocked, .decoyPasswordConfigured, .decoyPasswordDisabled, .decoyPasswordUsed:
             return .advancedProtection
         case .noteExported, .sharedNoteExported, .sharedNoteImported, .backupCreated, .backupRestored:
@@ -362,6 +360,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
     var decoyPasswordSalt: Data? = nil
     var decoyPasswordVerifier: Data? = nil
     var decoyPasswordAction: DecoyPasswordAction = .openDecoySpace
+    var decoyEncryptedNotes: Data? = nil
     var role: AccountRole = .standard
     var usernameSalt: Data? = nil
     var usernameHash: Data? = nil
@@ -381,6 +380,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         case decoyPasswordSalt
         case decoyPasswordVerifier
         case decoyPasswordAction
+        case decoyEncryptedNotes
         case role
         case usernameSalt
         case usernameHash
@@ -401,6 +401,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         decoyPasswordSalt: Data? = nil,
         decoyPasswordVerifier: Data? = nil,
         decoyPasswordAction: DecoyPasswordAction = .openDecoySpace,
+        decoyEncryptedNotes: Data? = nil,
         role: AccountRole = .standard,
         usernameSalt: Data? = nil,
         usernameHash: Data? = nil,
@@ -419,6 +420,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         self.decoyPasswordSalt = decoyPasswordSalt
         self.decoyPasswordVerifier = decoyPasswordVerifier
         self.decoyPasswordAction = decoyPasswordAction
+        self.decoyEncryptedNotes = decoyEncryptedNotes
         self.role = role
         self.usernameSalt = usernameSalt
         self.usernameHash = usernameHash
@@ -440,6 +442,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         decoyPasswordSalt = try container.decodeIfPresent(Data.self, forKey: .decoyPasswordSalt)
         decoyPasswordVerifier = try container.decodeIfPresent(Data.self, forKey: .decoyPasswordVerifier)
         decoyPasswordAction = try container.decodeIfPresent(DecoyPasswordAction.self, forKey: .decoyPasswordAction) ?? .openDecoySpace
+        decoyEncryptedNotes = try container.decodeIfPresent(Data.self, forKey: .decoyEncryptedNotes)
         role = try container.decodeIfPresent(AccountRole.self, forKey: .role) ?? .standard
         usernameSalt = try container.decodeIfPresent(Data.self, forKey: .usernameSalt)
         usernameHash = try container.decodeIfPresent(Data.self, forKey: .usernameHash)
@@ -493,8 +496,8 @@ enum VaultError: LocalizedError {
         case .usernameInvalid: "用户名不可用"
         case .usernameTaken: "这个用户名已经注册"
         case .recoveryCodeMissing: "这个用户还没有恢复码，请先登录后生成恢复码"
-        case .biometricsUnavailable: "这台 Mac 暂时无法使用 Touch ID"
-        case .touchIDNotConfigured: "这个账户还没有启用 Touch ID"
+        case .biometricsUnavailable: "旧版快捷解锁不可用"
+        case .touchIDNotConfigured: "旧版快捷解锁未配置"
         case .importCancelled: "导入已取消"
         case .keychain(let status): "钥匙串操作失败（\(status)）"
         }

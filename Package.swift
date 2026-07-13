@@ -12,7 +12,6 @@ let package = Package(
             name: "CipherNotes",
             linkerSettings: [
                 .linkedFramework("Security"),
-                .linkedFramework("LocalAuthentication"),
                 .linkedFramework("PDFKit")
             ]
         ),
