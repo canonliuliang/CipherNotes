@@ -314,21 +314,7 @@ struct AppBackground: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                .opacity(colorScheme == .dark ? 0.72 : 0.64)
-            }
-            .overlay(alignment: .topLeading) {
-                Circle()
-                    .fill(.mint.opacity(colorScheme == .dark ? 0.12 : 0.16))
-                    .blur(radius: 90)
-                    .frame(width: 360, height: 360)
-                    .offset(x: -240, y: -230)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(.cyan.opacity(colorScheme == .dark ? 0.08 : 0.10))
-                    .blur(radius: 100)
-                    .frame(width: 420, height: 420)
-                    .offset(x: 220, y: 210)
+                .opacity(colorScheme == .dark ? 0.24 : 0.16)
             }
             .ignoresSafeArea()
     }
@@ -354,20 +340,39 @@ struct GlassPanel: ViewModifier {
     var radius: CGFloat = 22
 
     func body(content: Content) -> some View {
-        content
-            .padding(26)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(alignment: .top) {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.58), lineWidth: 1)
-                    .blendMode(.plusLighter)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.07), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
-            .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            content
+                .padding(26)
+                .glassEffect(.regular, in: shape)
+        } else {
+            content
+                .padding(26)
+                .background(.regularMaterial, in: shape)
+                .overlay(alignment: .top) {
+                    shape
+                        .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.58), lineWidth: 1)
+                        .blendMode(.plusLighter)
+                }
+                .overlay {
+                    shape
+                        .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.07), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
+                .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
+        }
+    }
+}
+
+struct AppleProminentButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        if #available(macOS 26.0, *) {
+            configuration.label
+                .buttonStyle(.glassProminent)
+        } else {
+            configuration.label
+                .buttonStyle(.borderedProminent)
+        }
     }
 }
 
@@ -382,19 +387,33 @@ struct ClearButtonStyle: ButtonStyle {
     }
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let label = configuration.label
             .font(.callout.weight(.semibold))
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .frame(minHeight: 30)
-            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            }
             .opacity(configuration.isPressed ? 0.86 : 1)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        if #available(macOS 26.0, *) {
+            label
+                .glassEffect(.regular.tint(glassTint).interactive(), in: shape)
+        } else {
+            label
+                .background(backgroundColor(configuration.isPressed), in: shape)
+                .overlay {
+                    shape.stroke(borderColor, lineWidth: 1)
+                }
+                .contentShape(shape)
+        }
+    }
+
+    private var glassTint: Color? {
+        switch prominence {
+        case .standard: nil
+        case .primary: .accentColor.opacity(0.18)
+        case .danger: .red.opacity(0.12)
+        }
     }
 
     private var foregroundColor: Color {
@@ -601,7 +620,7 @@ struct IntroView: View {
                 HStack {
                     Spacer()
                     Button("开始使用") { onContinue() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(AppleProminentButtonStyle())
                         .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
                 }
@@ -650,7 +669,7 @@ struct MigrationView: View {
                     )
                     oldPassword = ""
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large)
+                .buttonStyle(AppleProminentButtonStyle()).controlSize(.large)
                 Button("跳过，清空旧数据并重新开始", role: .destructive) {
                     store.discardLegacyVaultAndStartFresh()
                 }
@@ -838,7 +857,7 @@ struct UnlockView: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(unlock)
             Button("登录", action: unlock)
-                .buttonStyle(.borderedProminent).controlSize(.large)
+                .buttonStyle(AppleProminentButtonStyle()).controlSize(.large)
                 .frame(maxWidth: .infinity)
                 .disabled(!canSubmitLogin)
                 .keyboardShortcut(.defaultAction)
@@ -867,7 +886,7 @@ struct UnlockView: View {
                 .onSubmit(register)
             PasswordStrengthIndicator(password: password)
             Button("注册并进入", action: register)
-                .buttonStyle(.borderedProminent).controlSize(.large)
+                .buttonStyle(AppleProminentButtonStyle()).controlSize(.large)
                 .frame(maxWidth: .infinity)
                 .keyboardShortcut(.defaultAction)
             Text("每个本地账户都由自己的密码和恢复码保护。")
@@ -1167,7 +1186,7 @@ struct NotesView: View {
                             } label: {
                                 Label("新建第一条笔记", systemImage: "square.and.pencil")
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(AppleProminentButtonStyle())
                         }
                         .padding()
                     }
@@ -1979,7 +1998,7 @@ struct VaultView: View {
         } label: {
             Label("移入照片或文件", systemImage: "tray.and.arrow.down.fill")
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(AppleProminentButtonStyle())
         .controlSize(.regular)
     }
 
@@ -2599,7 +2618,7 @@ struct ShareExportView: View {
                 Button("取消", action: onCancel)
                 Spacer()
                 Button("选择保存位置", action: onExport)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppleProminentButtonStyle())
             }
         }
         .padding(24)
@@ -2624,7 +2643,7 @@ struct ShareImportView: View {
                 Button("取消", action: onCancel)
                 Spacer()
                 Button("导入", action: onImport)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppleProminentButtonStyle())
             }
         }
         .padding(24)
@@ -2654,7 +2673,7 @@ struct RecoveryCodeView: View {
             HStack {
                 Spacer()
                 Button("我已保存") { onDone() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppleProminentButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -2687,7 +2706,7 @@ struct LegalDisclosureView: View {
             HStack {
                 Spacer()
                 Button("我知道了") { dismiss() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppleProminentButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -2837,7 +2856,7 @@ struct SecurityCenterView: View {
                                 } label: {
                                     Label(store.currentAccountDecoyPasswordEnabled ? "更新虚假密码" : "设置虚假密码", systemImage: "key.horizontal.fill")
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(AppleProminentButtonStyle())
                                 .disabled(decoyCurrentPassword.isEmpty || decoyPassword.isEmpty || decoyConfirmation.isEmpty)
 
                                 Button(role: .destructive) {
@@ -3431,7 +3450,7 @@ struct UserManagementView: View {
                 } label: {
                     Label("更新密码", systemImage: "key.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AppleProminentButtonStyle())
                 .disabled(passwordNew != passwordConfirmation)
             }
         }
@@ -3512,7 +3531,7 @@ struct UserManagementView: View {
                 dismiss()
             }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(AppleProminentButtonStyle())
         .disabled(!eraseConfirmationReady)
     }
 
@@ -3900,7 +3919,7 @@ struct ChangelogView: View {
             HStack {
                 Spacer()
                 Button("关闭") { dismiss() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppleProminentButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
