@@ -144,6 +144,12 @@ The normal app deliberately disables window capture. Developers can launch an is
 
 This mode shows an orange `Developer Demo` warning, creates only one `Developer` account, uses a temporary demo vault, and never opens the normal local vault or other accounts. It is for screenshots and interface demonstrations only.
 
+When `/Applications/密笺.app` requires administrator authorization to replace, use the repository helper instead. It installs a user-owned copy and launches the current build without asking for an administrator password:
+
+```sh
+Packaging/launch-developer-demo.sh
+```
+
 ## Publish A Public Download
 
 Pushing source code to GitHub updates the repository and GitHub Pages, but it does not update what users download from the website by itself. The website download button points to GitHub Releases latest.
