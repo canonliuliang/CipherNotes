@@ -2336,11 +2336,10 @@ private struct VaultInternalPreviewView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(payload.title)
                         .font(.headline)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .truncationMode(.middle)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("内置查看器")
-                        .font(.caption)
+                    Text("内置查看")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -2348,22 +2347,24 @@ private struct VaultInternalPreviewView: View {
                 Button {
                     dismiss()
                 } label: {
-                    Label("关闭", systemImage: "xmark")
+                    Image(systemName: "xmark")
+                        .frame(width: 26, height: 26)
                 }
                 .buttonStyle(ClearButtonStyle())
+                .help("关闭查看器")
                 .keyboardShortcut(.cancelAction)
             }
 
-            Label("内容只在密笺内解密显示，不交给外部 App。关闭后会清理预览缓存。", systemImage: "lock.fill")
-                .font(.caption)
+            Text("内容只在密笺内解密显示，关闭后会清理预览缓存。")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(20)
-        .frame(minWidth: 520, idealWidth: 780, minHeight: 420, idealHeight: 620)
+        .padding(16)
+        .frame(minWidth: 420, idealWidth: 600, minHeight: 340, idealHeight: 460)
     }
 
     @ViewBuilder
@@ -2375,10 +2376,7 @@ private struct VaultInternalPreviewView: View {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(
-                            minWidth: max(proxy.size.width - 24, 1),
-                            minHeight: max(proxy.size.height - 24, 1)
-                        )
+                        .frame(width: max(proxy.size.width - 24, 1), height: max(proxy.size.height - 24, 1))
                         .padding(12)
                 }
             }
