@@ -3,10 +3,21 @@ import SwiftUI
 
 @main
 struct CipherNotesApp: App {
-    @StateObject private var store = VaultStore()
+    @StateObject private var store: VaultStore
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("noteSort") private var noteSortRawValue = NoteSort.updatedNewest.rawValue
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
+
+    init() {
+        if ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] == "1" {
+            let demoDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("CipherNotes-DeveloperDemo", isDirectory: true)
+            try? FileManager.default.removeItem(at: demoDirectory)
+            let demoVaultURL = demoDirectory.appendingPathComponent("vault.json")
+            _store = StateObject(wrappedValue: VaultStore(vaultURL: demoVaultURL))
+        } else {
+            _store = StateObject(wrappedValue: VaultStore())
+        }
+    }
 
     private var appAppearance: AppAppearance {
         AppAppearance(rawValue: appAppearanceRawValue) ?? .system

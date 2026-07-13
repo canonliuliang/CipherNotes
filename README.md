@@ -14,7 +14,7 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.5` · 安全模型与虚假空间修复.
+- Current release: `1.0.6` · 开发者演示模式与安全日志收敛.
 - `密笺安装器.pkg`: recommended installer.
 - `密笺-macOS.zip`: portable archive.
 
@@ -133,6 +133,17 @@ This script runs the release build, updates `outputs`, closes the running app if
 
 This only updates your local Mac. Users still get updates from GitHub Releases.
 
+## Developer Screenshot Mode
+
+The normal app deliberately disables window capture. Developers can launch an isolated screenshot/demo session from Terminal:
+
+```sh
+/usr/bin/env CIPHERNOTES_ALLOW_CAPTURE=1 \
+/Applications/密笺.app/Contents/MacOS/CipherNotes
+```
+
+This mode shows an orange `Developer Demo` warning, creates only one `Developer` account, uses a temporary demo vault, and never opens the normal local vault or other accounts. It is for screenshots and interface demonstrations only.
+
 ## Publish A Public Download
 
 Pushing source code to GitHub updates the repository and GitHub Pages, but it does not update what users download from the website by itself. The website download button points to GitHub Releases latest.
@@ -141,8 +152,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.5
-git push origin v1.0.5
+git tag v1.0.6
+git push origin v1.0.6
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +185,12 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.6 - 开发者演示模式与安全日志收敛
+
+- Added an isolated Developer screenshot/demo mode with a temporary vault and one Developer account.
+- Added a visible warning banner so capture mode is clearly separated from normal app use.
+- Reduced local security-log noise with a 120-entry retention limit, duplicate-event coalescing, and a 40-row UI window.
 
 ### 1.0.5 - 安全模型与虚假空间修复
 

@@ -212,6 +212,11 @@ struct RootView: View {
             .background(.bar)
             .overlay(alignment: .top) { Divider().opacity(0.55) }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if store.isDeveloperDemoMode {
+                DeveloperDemoBanner()
+            }
+        }
         .frame(minWidth: 860, minHeight: 620)
         .preferredColorScheme(appAppearance.colorScheme)
         .onAppear {
@@ -500,6 +505,35 @@ struct BrandHeader: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+struct DeveloperDemoBanner: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "hammer.fill")
+                .font(.callout.weight(.semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Developer Demo")
+                    .font(.caption.weight(.bold))
+                Text("开发者截图模式：使用独立临时数据，不会访问正式账户或正式保险库")
+                    .font(.caption2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Label("仅 Developer 账户", systemImage: "person.badge.key.fill")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.orange.opacity(0.12))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.orange.opacity(0.28))
+                .frame(height: 1)
         }
     }
 }
@@ -2947,7 +2981,7 @@ struct SecurityCenterView: View {
                                 .frame(maxWidth: .infinity, minHeight: 120)
                         } else {
                             VStack(spacing: 8) {
-                                ForEach(filteredSecurityLogs.prefix(80)) { log in
+                                ForEach(filteredSecurityLogs.prefix(40)) { log in
                                     SecurityLogRow(log: log)
                                 }
                             }
@@ -3663,11 +3697,14 @@ struct ChangelogView: View {
 
     private let entries: [UpdateLogEntry] = [
         UpdateLogEntry(
-            id: "1.0.5",
-            version: "1.0.5",
-            title: "安全模型与虚假空间修复",
+            id: "1.0.6",
+            version: "1.0.6",
+            title: "开发者演示模式与安全日志收敛",
             dateText: "2026-07-13",
             items: [
+                "新增 Developer 截图演示模式：使用独立临时保险库，只允许一个 Developer 账户，不能访问正式账户或正式数据。",
+                "开发者演示模式顶部显示橙色警告和 Developer 标识，明确说明这是隔离演示环境，不是隐藏后门。",
+                "安全日志最多保留最近 120 条，五秒内重复的同类事件自动合并，安全中心只展示最近 40 条筛选结果。",
                 "移除设备级生物识别解锁入口，登录只保留账户密码和恢复码，避免多人共用设备时产生误解。",
                 "虚假空间改为独立加密并可保存：虚假密码进入后可以新建笔记和移入保险柜文件，但不会读写真实空间。",
                 "最高保护模式的开启与关闭按钮改为不同视觉状态，避免危险操作和保护操作看起来一样。",

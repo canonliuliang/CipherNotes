@@ -1,8 +1,15 @@
-# CipherNotes 1.0.5 - 安全模型与虚假空间修复
+# CipherNotes 1.0.6 - 开发者演示模式与安全日志收敛
 
 ## Summary
 
-CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.5 build tightens the security model, removes device-level biometric unlock, makes the decoy space persistent, and clarifies release/version rules.
+CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.6 build adds an isolated developer screenshot mode and keeps local security logs concise without changing the privacy boundary.
+
+## Highlights
+
+- Developer screenshot mode uses a temporary vault and a single `Developer` account; it cannot open the normal local vault or other accounts.
+- The app shows a persistent `Developer Demo` warning while capture mode is active.
+- Security logs retain the most recent 120 entries and collapse identical events repeated within five seconds.
+- The security log view shows the most recent 40 filtered entries for a calmer interface.
 
 ## What's Changed
 
@@ -40,7 +47,7 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 - Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.
-- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.5.
+- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.6.
 - Preserved the GitHub-inspired product website and automated Release workflow from 1.0.3.
 
 ## Downloads
@@ -56,4 +63,4 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 
 ## Publishing Reminder
 
-After pushing `main`, either push tag `v1.0.5` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
+After pushing `main`, either push tag `v1.0.6` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.

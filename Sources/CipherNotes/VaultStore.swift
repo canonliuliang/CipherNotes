@@ -82,7 +82,7 @@ final class VaultStore: ObservableObject {
 
     nonisolated private static let vaultVersion = 2
     nonisolated private static let sharedNoteVersion = 1
-    nonisolated private static let maxSecurityLogEntries = 500
+    nonisolated private static let maxSecurityLogEntries = 120
     nonisolated private static let decoyVerifierContext = Data("ciphernotes-decoy-password-v1".utf8)
 
     private let vaultURL: URL
@@ -120,6 +120,10 @@ final class VaultStore: ObservableObject {
         ensureAttachmentsNeverIndexed()
         installPrivacyObservers()
         seedDemoVaultIfRequested()
+    }
+
+    var isDeveloperDemoMode: Bool {
+        ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] == "1"
     }
 
     func migrateLegacyVault(username: String, oldPassword: String) {
@@ -233,6 +237,10 @@ final class VaultStore: ObservableObject {
             normalizedUsername = try validateUsernameFormat(username)
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        if isDeveloperDemoMode && normalizedUsername.caseInsensitiveCompare("Developer") != .orderedSame {
+            errorMessage = "开发者演示模式只允许使用 Developer 账户，不能访问或创建其他账户"
             return
         }
         guard password == confirmation else {
@@ -563,6 +571,13 @@ final class VaultStore: ObservableObject {
 
     func recordSecurityEvent(_ eventType: SecurityLogEventType, result: SecurityLogResult = .success, message: String) {
         guard state == .unlocked, vaultKey != nil, currentUserID != nil else { return }
+        if let latest = securityLogs.first,
+           latest.eventType == eventType,
+           latest.result == result,
+           latest.message == Self.sanitizedLogMessage(message),
+           Date().timeIntervalSince(latest.timestamp) < 5 {
+            return
+        }
         let entry = SecurityLogEntry(
             eventType: eventType,
             result: result,
@@ -1698,12 +1713,13 @@ final class VaultStore: ObservableObject {
     }
 
     private func seedDemoVaultIfRequested() {
-        guard ProcessInfo.processInfo.environment["CIPHERNOTES_DEMO_DATA"] == "1",
+        let developerDemo = isDeveloperDemoMode
+        guard (ProcessInfo.processInfo.environment["CIPHERNOTES_DEMO_DATA"] == "1" || developerDemo),
               state == .needsAdminSetup else { return }
 
         let userPassword = "demo-password"
         registerUser(
-            username: "演示账户",
+            username: developerDemo ? "Developer" : "演示账户",
             password: userPassword,
             confirmation: userPassword
         )
