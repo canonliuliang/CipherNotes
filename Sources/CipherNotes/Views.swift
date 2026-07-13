@@ -2122,6 +2122,7 @@ struct VaultItemCard: View {
     let item: VaultAttachment
     @State private var preview: NSImage?
     @State private var previewPayload: VaultPreviewPayload?
+    @State private var showingActions = false
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
@@ -2176,31 +2177,47 @@ struct VaultItemCard: View {
                 .disabled(protected || !canPreviewInternally)
                 .buttonStyle(ClearButtonStyle(prominence: .primary))
 
-                Menu {
-                    Button {
-                        exportItem()
-                    } label: {
-                        Label(protected ? "导出已禁用" : "导出文件", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(protected)
-                    Button {
-                        copyFileName()
-                    } label: {
-                        Label(protected ? "复制已禁用" : "复制文件名", systemImage: "doc.on.doc")
-                    }
-                    .disabled(protected)
-                    Divider()
-                    Button(role: .destructive) {
-                        store.deleteVaultItem(itemID: item.id)
-                    } label: {
-                        Label("删除文件", systemImage: "trash")
-                    }
+                Button {
+                    showingActions.toggle()
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 32, height: 26)
                 }
-                .menuStyle(.borderlessButton)
                 .help("更多文件操作")
+                .popover(isPresented: $showingActions, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("文件操作")
+                            .font(.headline)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 6)
+                        Button {
+                            showingActions = false
+                            exportItem()
+                        } label: {
+                            Label(protected ? "导出已禁用" : "导出文件", systemImage: "square.and.arrow.up")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .disabled(protected)
+                        Button {
+                            showingActions = false
+                            copyFileName()
+                        } label: {
+                            Label(protected ? "复制已禁用" : "复制文件名", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .disabled(protected)
+                        Divider()
+                        Button(role: .destructive) {
+                            showingActions = false
+                            store.deleteVaultItem(itemID: item.id)
+                        } label: {
+                            Label("删除文件", systemImage: "trash")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(6)
+                    .frame(width: 180)
+                }
             }
         }
         .padding(14)
