@@ -14,7 +14,7 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.6` · 开发者演示模式与安全日志收敛.
+- Current release: `1.0.7` · macOS 原生界面与 Liquid Glass 收口.
 - `密笺安装器.pkg`: recommended installer.
 - `密笺-macOS.zip`: portable archive.
 
@@ -158,8 +158,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.6
-git push origin v1.0.6
+git tag v1.0.7
+git push origin v1.0.7
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -191,6 +191,13 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.7 - macOS 原生界面与 Liquid Glass 收口
+
+- Reworked the main window around native macOS hierarchy: sidebar, toolbar, content, and floating surfaces.
+- Limited Liquid Glass to controls and floating panels; note reading and editing remain clear system-background content areas.
+- Reduced custom gradients, saturated colors, hard borders, and heavy shadows in favor of system colors and native materials.
+- Improved dark-mode and accent-color behavior across buttons, status indicators, and selection surfaces.
 
 ### 1.0.6 - 开发者演示模式与安全日志收敛
 

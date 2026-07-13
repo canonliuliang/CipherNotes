@@ -204,9 +204,9 @@ struct RootView: View {
                     Label("法律声明", systemImage: "doc.text.magnifyingglass")
                 }
             }
-            .buttonStyle(ClearButtonStyle())
+            .buttonStyle(.borderless)
             .font(.caption)
-            .foregroundStyle(.primary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
             .background(.bar)
@@ -298,9 +298,9 @@ private struct PrivacyShieldOverlay: View {
                 .buttonStyle(ClearButtonStyle(prominence: .primary))
             }
             .padding(30)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .nativeGlassSurface(radius: 20)
             .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(.mint.opacity(0.30), lineWidth: 1)
             }
         }
@@ -308,41 +308,16 @@ private struct PrivacyShieldOverlay: View {
 }
 
 struct AppBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         Rectangle()
             .fill(.background)
-            .overlay {
-                LinearGradient(
-                    colors: backgroundColors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .opacity(colorScheme == .dark ? 0.24 : 0.16)
-            }
             .ignoresSafeArea()
-    }
-
-    private var backgroundColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color(red: 0.04, green: 0.07, blue: 0.09),
-                Color(red: 0.02, green: 0.13, blue: 0.12),
-                Color(red: 0.06, green: 0.05, blue: 0.10)
-            ]
-        }
-        return [
-            Color(red: 0.92, green: 0.98, blue: 0.96),
-            Color(red: 0.96, green: 0.99, blue: 0.99),
-            Color(red: 0.94, green: 0.93, blue: 0.99)
-        ]
     }
 }
 
 struct GlassPanel: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    var radius: CGFloat = 22
+    var radius: CGFloat = 18
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -365,6 +340,24 @@ struct GlassPanel: ViewModifier {
                 }
                 .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
                 .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
+        }
+    }
+}
+
+struct NativeGlassSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    var radius: CGFloat = 16
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay {
+                    shape.stroke(.primary.opacity(colorScheme == .dark ? 0.16 : 0.10), lineWidth: 1)
+                }
         }
     }
 }
@@ -424,11 +417,11 @@ struct ClearButtonStyle: ButtonStyle {
     private var foregroundColor: Color {
         switch prominence {
         case .standard:
-            colorScheme == .dark ? .white : Color(red: 0.09, green: 0.12, blue: 0.15)
+            .primary
         case .primary:
-            .white
+            .primary
         case .danger:
-            colorScheme == .dark ? Color(red: 1.0, green: 0.82, blue: 0.82) : Color(red: 0.58, green: 0.05, blue: 0.06)
+            .red
         }
     }
 
@@ -439,7 +432,7 @@ struct ClearButtonStyle: ButtonStyle {
                 ? Color.white.opacity(isPressed ? 0.24 : 0.16)
                 : Color.black.opacity(isPressed ? 0.095 : 0.060)
         case .primary:
-            Color(red: 0.0, green: 0.42, blue: 0.82).opacity(isPressed ? 0.82 : 1)
+            Color.accentColor.opacity(isPressed ? 0.82 : 1)
         case .danger:
             colorScheme == .dark
                 ? Color.red.opacity(isPressed ? 0.28 : 0.18)
@@ -466,20 +459,24 @@ struct MacHoverLift: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(disabled || !hovered ? 1 : 1.012)
-            .shadow(color: .black.opacity(disabled || !hovered ? 0 : 0.16), radius: 14, y: 8)
+            .scaleEffect(disabled || !hovered ? 1 : 1.006)
+            .shadow(color: .black.opacity(disabled || !hovered ? 0 : 0.10), radius: 8, y: 3)
             .animation(.easeOut(duration: 0.16), value: hovered)
             .onHover { hovered = $0 }
     }
 }
 
 extension View {
-    func glassPanel(radius: CGFloat = 22) -> some View {
+    func glassPanel(radius: CGFloat = 18) -> some View {
         modifier(GlassPanel(radius: radius))
     }
 
     func macHoverLift(disabled: Bool = false) -> some View {
         modifier(MacHoverLift(disabled: disabled))
+    }
+
+    func nativeGlassSurface(radius: CGFloat = 16) -> some View {
+        modifier(NativeGlassSurface(radius: radius))
     }
 }
 
@@ -560,12 +557,7 @@ struct CeremonyToast: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.34), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+        .nativeGlassSurface(radius: 16)
     }
 }
 
@@ -623,11 +615,7 @@ struct VaultIntakeVisual: View {
                 .controlSize(.small)
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.mint.opacity(0.22), lineWidth: 1)
-        }
+        .nativeGlassSurface(radius: 18)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
@@ -1097,6 +1085,7 @@ struct NotesView: View {
                 .padding(.horizontal, 18)
                 .padding(.bottom, 10)
                 .frame(minHeight: 54)
+                .background(.bar)
 
             ZStack {
                 if workspaceMode == .notes {
@@ -1112,6 +1101,7 @@ struct NotesView: View {
             .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: workspaceMode)
         }
         .toolbar(content: workspaceToolbar)
+        .toolbarBackground(.bar, for: .windowToolbar)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesAddAttachments)) { _ in
             workspaceMode = .vault
             DispatchQueue.main.async {
@@ -1247,7 +1237,7 @@ struct NotesView: View {
                 .padding(12)
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 270)
-            .background(.thinMaterial)
+            .background(.background)
         } detail: {
             if let selection, store.notes.contains(where: { $0.id == selection }) {
                 NoteEditor(noteID: selection)
@@ -1255,6 +1245,7 @@ struct NotesView: View {
                 ContentUnavailableView("选择一条笔记", systemImage: "note.text", description: Text("或创建一条新的加密笔记"))
             }
         })
+        .listStyle(.sidebar)
         .onAppear(perform: ensureSelection)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesNewNote)) { _ in addNewNoteFromCommand() }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesDuplicateNote)) { _ in duplicateSelectedNote() }
@@ -1294,25 +1285,25 @@ struct NotesView: View {
                 "当前账户",
                 value: store.signedInUsername ?? "未登录",
                 systemImage: "person.crop.circle.fill",
-                tint: .mint
+                tint: .accentColor
             )
             mainStatusPill(
                 "保护模式",
                 value: store.currentAccountAdvancedDataProtectionEnabled ? "最高保护" : "标准保护",
                 systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield",
-                tint: store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary
+                tint: store.currentAccountAdvancedDataProtectionEnabled ? .accentColor : .secondary
             )
             mainStatusPill(
                 "自动锁定",
                 value: "\(store.autoLockMinutes) 分钟",
                 systemImage: "timer",
-                tint: .blue
+                tint: .secondary
             )
             mainStatusPill(
                 "保险柜",
                 value: "\(store.vaultItems.count) 个文件",
                 systemImage: "lock.rectangle.stack.fill",
-                tint: .teal
+                tint: .secondary
             )
         }
     }
@@ -1346,11 +1337,6 @@ struct NotesView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(.primary.opacity(0.08), lineWidth: 1)
-        }
     }
 
     private func delete(_ id: UUID) {
@@ -1812,7 +1798,7 @@ struct NoteEditor: View {
                     .transition(MotionStyle.transition(reduceMotion: false))
             }
         }
-        .background(.regularMaterial)
+        .background(.background)
         .onAppear(perform: loadDraft)
         .onChange(of: noteID) { _, _ in loadDraft() }
         .onChange(of: draftTitle) { _, _ in scheduleSave() }
@@ -2183,11 +2169,7 @@ struct VaultView: View {
             }
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.primary.opacity(0.10), lineWidth: 1)
-        }
+        .nativeGlassSurface(radius: 16)
     }
 
     private func vaultImportIcon(for job: VaultImportJob) -> String {
@@ -2335,11 +2317,7 @@ struct VaultItemCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.primary.opacity(0.10), lineWidth: 1)
-        }
+        .nativeGlassSurface(radius: 18)
         .task(id: item.id) {
             if isImage && !store.currentAccountAdvancedDataProtectionEnabled {
                 preview = store.previewVaultImage(itemID: item.id)
@@ -3392,11 +3370,7 @@ struct SecurityLogRow: View {
             Spacer(minLength: 8)
         }
         .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(tint.opacity(0.24), lineWidth: 1)
-        }
+        .nativeGlassSurface(radius: 12)
     }
 
     private var iconName: String {
@@ -3433,11 +3407,7 @@ struct SecurityLogRow: View {
 private extension View {
     func securitySection() -> some View {
         padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.primary.opacity(0.10), lineWidth: 1)
-            }
+            .nativeGlassSurface(radius: 16)
     }
 }
 
@@ -3652,7 +3622,7 @@ struct UserManagementView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .nativeGlassSurface(radius: 12)
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(isCurrent ? Color.mint.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 1)
@@ -3696,6 +3666,18 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.7",
+            version: "1.0.7",
+            title: "macOS 原生界面与 Liquid Glass 收口",
+            dateText: "2026-07-13",
+            items: [
+                "主窗口重新按 macOS 原生层级组织：侧边栏、工具栏、内容区和浮层职责更清楚。",
+                "Liquid Glass 只用于按钮、状态面板、日志行和浮动面板；笔记阅读与编辑区域保持清晰的系统背景。",
+                "减少自定义渐变、硬边框和厚重阴影，颜色更多跟随系统 accent color，并改善深色模式对比度。",
+                "侧边栏改用原生 List sidebar 风格，工具栏改用系统 bar 背景。",
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.6",
             version: "1.0.6",

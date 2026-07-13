@@ -1,10 +1,17 @@
-# CipherNotes 1.0.6 - 开发者演示模式与安全日志收敛
+# CipherNotes 1.0.7 - macOS 原生界面与 Liquid Glass 收口
 
 ## Summary
 
-CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.6 build adds an isolated developer screenshot mode and keeps local security logs concise without changing the privacy boundary.
+CipherNotes is a privacy-first, fully local encrypted notes app and file vault for macOS. This 1.0.7 build refines the interface around native macOS hierarchy and uses Liquid Glass only where it supports navigation and controls.
 
 ## Highlights
+
+- Native sidebar/list hierarchy and system toolbar background for the main workspace.
+- Liquid Glass is limited to floating panels, status surfaces, and controls; reading and editing areas stay content-first.
+- System accent colors, quieter shadows, fewer custom gradients, and improved dark-mode contrast.
+- The isolated Developer screenshot mode and concise security-log behavior from 1.0.6 remain available.
+
+## Previous release highlights
 
 - Developer screenshot mode uses a temporary vault and a single `Developer` account; it cannot open the normal local vault or other accounts.
 - The app shows a persistent `Developer Demo` warning while capture mode is active.
@@ -47,7 +54,7 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 - Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.
-- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.6.
+- Kept release metadata, README, website, GitHub Pages, packaging configuration, and the in-app changelog aligned to version 1.0.7.
 - Preserved the GitHub-inspired product website and automated Release workflow from 1.0.3.
 
 ## Downloads
@@ -63,4 +70,4 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 
 ## Publishing Reminder
 
-After pushing `main`, either push tag `v1.0.6` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
+After pushing `main`, either push tag `v1.0.7` or run the GitHub `Release` workflow manually from the Actions tab. The workflow will build the app, create or update the Release, and upload the generated files.
