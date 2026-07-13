@@ -22,6 +22,8 @@
 	<string>1.0.7</string>
     <key>CFBundleVersion</key>
     <string>32</string>
+    <key>CFBundleBuildDate</key>
+    <string>未生成</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHumanReadableCopyright</key>

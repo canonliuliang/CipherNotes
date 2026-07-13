@@ -15,6 +15,7 @@ DEVELOPER_ICONSET_DIR="$ICONBUILD_DIR/DeveloperIcon.iconset"
 cd "$ROOT_DIR"
 
 source "$ROOT_DIR/Packaging/release.env"
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 "$ROOT_DIR/Packaging/validate-release.sh"
 
@@ -41,6 +42,7 @@ make_app() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$app_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $CIPHERNOTES_VERSION" "$app_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CIPHERNOTES_BUILD" "$app_path/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleBuildDate $BUILD_DATE" "$app_path/Contents/Info.plist"
     local icon_path="$ROOT_DIR/Assets/AppIcon.icns"
     if [ "$bundle_id" = "app.ciphernotes.local.developer" ]; then
         icon_path="$ROOT_DIR/Assets/DeveloperAppIcon.icns"

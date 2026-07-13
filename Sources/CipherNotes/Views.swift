@@ -517,6 +517,9 @@ struct DeveloperDemoBanner: View {
                 Text("不会读取普通版数据；仅允许 Developer 账户，文件和更新操作只作用于当前演示副本。")
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("v\(developerVersion) · build \(developerBuild) · 上次构建 \(developerBuildDate)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.red.opacity(0.82))
             }
             Spacer(minLength: 8)
             Label("仅 Developer 账户", systemImage: "person.badge.key.fill")
@@ -537,6 +540,18 @@ struct DeveloperDemoBanner: View {
                 .fill(.red.opacity(0.45))
                 .frame(height: 1)
         }
+    }
+
+    private var developerVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版"
+    }
+
+    private var developerBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+    }
+
+    private var developerBuildDate: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildDate") as? String ?? "未记录"
     }
 }
 
@@ -1095,15 +1110,17 @@ struct NotesView: View {
             ZStack {
                 if workspaceMode == .notes {
                     notesBody
-                        .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .leading))
                 } else {
                     VaultView()
                         .environmentObject(store)
-                        .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: workspaceMode)
+            // The native segmented control supplies selection feedback. Avoid
+            // sliding two large split views, which made headers flash on switching.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
         .toolbar(content: workspaceToolbar)
         .toolbarBackground(.bar, for: .windowToolbar)
@@ -1151,6 +1168,8 @@ struct NotesView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .controlSize(.regular)
+                    .frame(height: 30)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -2093,6 +2112,8 @@ struct VaultView: View {
             }
         }
         .pickerStyle(.segmented)
+        .controlSize(.regular)
+        .frame(height: 30)
         .frame(maxWidth: 460)
     }
 
@@ -2222,7 +2243,6 @@ struct VaultItemCard: View {
     let item: VaultAttachment
     @State private var preview: NSImage?
     @State private var previewPayload: VaultPreviewPayload?
-    @State private var showingActions = false
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
@@ -2277,47 +2297,31 @@ struct VaultItemCard: View {
                 .disabled(protected || !canPreviewInternally)
                 .buttonStyle(ClearButtonStyle(prominence: .primary))
 
-                Button {
-                    showingActions.toggle()
+                Menu {
+                    Button {
+                        exportItem()
+                    } label: {
+                        Label(protected ? "导出已禁用" : "导出文件", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(protected)
+                    Button {
+                        copyFileName()
+                    } label: {
+                        Label(protected ? "复制已禁用" : "复制文件名", systemImage: "doc.on.doc")
+                    }
+                    .disabled(protected)
+                    Divider()
+                    Button(role: .destructive) {
+                        store.deleteVaultItem(itemID: item.id)
+                    } label: {
+                        Label("删除文件", systemImage: "trash")
+                    }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(systemName: "ellipsis.circle")
                         .frame(width: 32, height: 26)
                 }
+                .menuStyle(.borderlessButton)
                 .help("更多文件操作")
-                .popover(isPresented: $showingActions, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("文件操作")
-                            .font(.headline)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 6)
-                        Button {
-                            showingActions = false
-                            exportItem()
-                        } label: {
-                            Label(protected ? "导出已禁用" : "导出文件", systemImage: "square.and.arrow.up")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .disabled(protected)
-                        Button {
-                            showingActions = false
-                            copyFileName()
-                        } label: {
-                            Label(protected ? "复制已禁用" : "复制文件名", systemImage: "doc.on.doc")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .disabled(protected)
-                        Divider()
-                        Button(role: .destructive) {
-                            showingActions = false
-                            store.deleteVaultItem(itemID: item.id)
-                        } label: {
-                            Label("删除文件", systemImage: "trash")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .padding(6)
-                    .frame(width: 180)
-                }
             }
         }
         .padding(14)
@@ -2834,6 +2838,10 @@ struct SecurityCenterView: View {
                         securityMetric("保险柜", "\(store.vaultItems.count) 个文件", "lock.rectangle.stack.fill", .teal)
                     }
 
+                    if store.isDeveloperDemoMode {
+                        developerToolsCard
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("保护状态", systemImage: "checkmark.shield.fill")
                         securityRow(
@@ -3068,6 +3076,52 @@ struct SecurityCenterView: View {
                 Label("复制数据位置", systemImage: "doc.on.doc")
             }
         }
+    }
+
+    private var developerToolsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Developer 工具", systemImage: "hammer.fill")
+            Text("仅 Developer 版可见。这里的诊断信息不包含笔记正文、文件内容、密码或恢复码。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
+                Button {
+                    copyDeveloperDiagnostics()
+                } label: {
+                    Label("复制诊断信息", systemImage: "doc.on.doc")
+                }
+                Button {
+                    store.clearSensitivePreviewCaches()
+                    store.errorMessage = "Developer 预览缓存已清理"
+                } label: {
+                    Label("清理预览缓存", systemImage: "trash.slash")
+                }
+                Button {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: NSTemporaryDirectory()))
+                } label: {
+                    Label("打开临时演示目录", systemImage: "folder")
+                }
+            }
+            .buttonStyle(ClearButtonStyle())
+        }
+        .securitySection()
+    }
+
+    private func copyDeveloperDiagnostics() {
+        let info = [
+            "CipherNotes Developer",
+            "Version: \(currentAppVersion)",
+            "Build: \(currentAppBuild)",
+            "Build date: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildDate") as? String ?? "-" )",
+            "Bundle: \(Bundle.main.bundleIdentifier ?? "-")",
+            "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "Demo vault items: \(store.vaultItems.count)",
+            "Advanced protection: \(store.currentAccountAdvancedDataProtectionEnabled)"
+        ].joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(info, forType: .string)
+        store.errorMessage = "诊断信息已复制"
     }
 
     private var versionUpdateCard: some View {
