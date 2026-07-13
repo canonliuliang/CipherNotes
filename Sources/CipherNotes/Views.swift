@@ -492,7 +492,13 @@ struct BrandHeader: View {
             .frame(width: compact ? 32 : 52, height: compact ? 32 : 52)
             VStack(alignment: .leading, spacing: 2) {
                 Text("密笺").font(compact ? .headline : .largeTitle.bold())
-                Text("只属于你的本地加密笔记").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Image(systemName: "apple.logo")
+                        .font(.caption2.weight(.medium))
+                    Text("为 macOS 设计的本地加密笔记")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -616,6 +622,9 @@ struct IntroView: View {
                 }
                 Text("接下来创建你的第一个本地账户。")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+                Label("原生 macOS 体验 · 完全本地运行", systemImage: "apple.logo")
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                 HStack {
                     Spacer()
@@ -1080,7 +1089,11 @@ struct NotesView: View {
     private var workspaceSwitcher: some View {
         Picker("区域", selection: $workspaceMode) {
             ForEach(WorkspaceMode.allCases) { mode in
-                Text(mode.rawValue).tag(mode)
+                Label(
+                    mode.rawValue,
+                    systemImage: mode == .notes ? "note.text" : "lock.rectangle.stack.fill"
+                )
+                .tag(mode)
             }
         }
         .pickerStyle(.segmented)
@@ -1339,18 +1352,31 @@ struct NotesView: View {
 
     @ViewBuilder
     private var vaultToolbarMenu: some View {
-        Button("移入照片或文件…") {
+        Button {
             NotificationCenter.default.post(name: .cipherNotesOpenVaultImporter, object: nil)
+        } label: {
+            Label("移入照片或文件…", systemImage: "tray.and.arrow.down.fill")
         }
         Divider()
-        Button("备份保险库…") { backupVault() }
-        Button("从备份还原…") { restoreVault() }
+        Button { backupVault() } label: {
+            Label("备份保险库…", systemImage: "externaldrive.badge.plus")
+        }
+        Button { restoreVault() } label: {
+            Label("从备份还原…", systemImage: "arrow.counterclockwise.icloud")
+        }
         Divider()
-        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式") {
+        Button {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
+        } label: {
+            Label(
+                store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式",
+                systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
+            )
         }
-        Button("生成新的恢复码") {
+        Button {
             store.rotateRecoveryCode()
+        } label: {
+            Label("生成新的恢复码", systemImage: "key.fill")
         }
     }
 
@@ -1375,32 +1401,57 @@ struct NotesView: View {
             }
         }
         Divider()
-        Button("置顶 / 取消置顶") { togglePinnedSelectedNote() }
+        Button { togglePinnedSelectedNote() } label: {
+            Label("置顶 / 取消置顶", systemImage: "pin.fill")
+        }
             .disabled(selectedNote == nil)
-        Button("收藏 / 取消收藏") { toggleFavoriteSelectedNote() }
+        Button { toggleFavoriteSelectedNote() } label: {
+            Label("收藏 / 取消收藏", systemImage: "star.fill")
+        }
             .disabled(selectedNote == nil)
-        Button("归档 / 移回") { toggleArchivedSelectedNote() }
+        Button { toggleArchivedSelectedNote() } label: {
+            Label("归档 / 移回", systemImage: "archivebox.fill")
+        }
             .disabled(selectedNote == nil)
         Divider()
-        Button("复制所选笔记内容") { copySelectedNote() }
+        Button { copySelectedNote() } label: {
+            Label("复制所选笔记内容", systemImage: "doc.on.doc")
+        }
             .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button("复制所选笔记为新笔记") { duplicateSelectedNote() }
+        Button { duplicateSelectedNote() } label: {
+            Label("复制所选笔记为新笔记", systemImage: "plus.square.on.square")
+        }
             .disabled(selectedNote == nil)
         Divider()
-        Button("导出所选笔记为 Markdown…") { exportSelectedPlainNote(fileExtension: "md") }
+        Button { exportSelectedPlainNote(fileExtension: "md") } label: {
+            Label("导出所选笔记为 Markdown…", systemImage: "doc.text")
+        }
             .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button("导出所选笔记为 TXT…") { exportSelectedPlainNote(fileExtension: "txt") }
+        Button { exportSelectedPlainNote(fileExtension: "txt") } label: {
+            Label("导出所选笔记为 TXT…", systemImage: "doc.plaintext")
+        }
             .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button("导出所选笔记为共享文件") { showingExportShare = true }
+        Button { showingExportShare = true } label: {
+            Label("导出所选笔记为共享文件", systemImage: "square.and.arrow.up")
+        }
             .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button("导入共享文件") { chooseSharedFile() }
+        Button { chooseSharedFile() } label: {
+            Label("导入共享文件", systemImage: "square.and.arrow.down")
+        }
             .disabled(store.currentAccountAdvancedDataProtectionEnabled)
         Divider()
-        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式") {
+        Button {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
+        } label: {
+            Label(
+                store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式",
+                systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
+            )
         }
-        Button("生成新的恢复码") {
+        Button {
             store.rotateRecoveryCode()
+        } label: {
+            Label("生成新的恢复码", systemImage: "key.fill")
         }
     }
 
