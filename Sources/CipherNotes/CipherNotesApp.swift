@@ -9,7 +9,9 @@ struct CipherNotesApp: App {
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
 
     init() {
-        if ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] == "1" {
+        let developerBuild = ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] == "1"
+            || Bundle.main.bundleIdentifier == "app.ciphernotes.local.developer"
+        if developerBuild {
             let demoDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("CipherNotes-DeveloperDemo", isDirectory: true)
             try? FileManager.default.removeItem(at: demoDirectory)
             let demoVaultURL = demoDirectory.appendingPathComponent("vault.json")

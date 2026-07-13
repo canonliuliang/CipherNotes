@@ -221,7 +221,7 @@ struct RootView: View {
         .preferredColorScheme(appAppearance.colorScheme)
         .onAppear {
             DispatchQueue.main.async {
-                if ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] != "1" {
+                if !store.isDeveloperDemoMode {
                     NSApplication.shared.windows.forEach { $0.sharingType = .none }
                 }
             }
@@ -508,28 +508,33 @@ struct BrandHeader: View {
 
 struct DeveloperDemoBanner: View {
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "hammer.fill")
-                .font(.callout.weight(.semibold))
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .font(.title3.weight(.bold))
             VStack(alignment: .leading, spacing: 1) {
-                Text("Developer Demo")
-                    .font(.caption.weight(.bold))
-                Text("开发者截图模式：使用独立临时数据，不会访问正式账户或正式保险库")
-                    .font(.caption2)
+                Text("Developer 版 · 隔离演示环境")
+                    .font(.headline.weight(.bold))
+                Text("不会读取普通版数据；仅允许 Developer 账户，文件和更新操作只作用于当前演示副本。")
+                    .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             Label("仅 Developer 账户", systemImage: "person.badge.key.fill")
-                .font(.caption2.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .lineLimit(1)
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(.red)
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.orange.opacity(0.12))
+        .padding(.vertical, 12)
+        .background(.red.opacity(0.16))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.red.opacity(0.45))
+                .frame(height: 1)
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(.orange.opacity(0.28))
+                .fill(.red.opacity(0.45))
                 .frame(height: 1)
         }
     }

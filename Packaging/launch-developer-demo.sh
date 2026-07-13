@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_SOURCE="/tmp/ciphernotes-appbuild/密笺.app"
+APP_SOURCE="/tmp/ciphernotes-appbuild/密笺 Developer.app"
 APP_DEST="$HOME/Applications/密笺 Developer.app"
 
 cd "$ROOT_DIR"
@@ -18,5 +18,5 @@ pkill -x CipherNotes >/dev/null 2>&1 || true
 sleep 1
 
 echo "Launching isolated Developer Demo: $APP_DEST"
-CIPHERNOTES_ALLOW_CAPTURE=1 "$APP_DEST/Contents/MacOS/CipherNotes" >/tmp/ciphernotes-developer-demo.log 2>&1 &
+CIPHERNOTES_PROJECT_PATH="$ROOT_DIR" "$APP_DEST/Contents/MacOS/CipherNotes" >/tmp/ciphernotes-developer-demo.log 2>&1 &
 echo "Developer Demo log: /tmp/ciphernotes-developer-demo.log"

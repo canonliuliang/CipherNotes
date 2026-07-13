@@ -15,8 +15,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
 - Current release: `1.0.7` · macOS 原生界面与 Liquid Glass 收口.
-- `密笺安装器.pkg`: recommended installer.
-- `密笺-macOS.zip`: portable archive.
+- `密笺-1.0.7-普通版.pkg`: recommended public installer.
+- `密笺-1.0.7-普通版.zip`: public portable archive.
+- `密笺-Developer-1.0.7.pkg`: isolated Developer build for screenshots and testing.
 
 Requires macOS 14 or later.
 
@@ -113,8 +114,10 @@ Packaging/build-release.sh
 
 The script runs tests, builds the release app, and updates:
 
-- `outputs/密笺安装器.pkg`
-- `outputs/密笺-macOS.zip`
+- `outputs/密笺-<version>-普通版.pkg`
+- `outputs/密笺-<version>-普通版.zip`
+- `outputs/密笺-Developer-<version>.pkg`
+- `outputs/密笺-Developer-<version>.zip`
 - `outputs/使用说明.md`
 - `outputs/产品介绍.html`
 - `outputs/密笺图标.png`
@@ -142,7 +145,7 @@ The normal app deliberately disables window capture. Developers can launch an is
 /Applications/密笺.app/Contents/MacOS/CipherNotes
 ```
 
-This mode shows an orange `Developer Demo` warning, creates only one `Developer` account, uses a temporary demo vault, and never opens the normal local vault or other accounts. It is for screenshots and interface demonstrations only.
+This build shows a persistent red `Developer Demo` warning, creates only one `Developer` account, uses a temporary demo vault with real previewable sample files, and never opens the normal local vault or other accounts. It is for screenshots and interface demonstrations only.
 
 When `/Applications/密笺.app` requires administrator authorization to replace, use the repository helper instead. It installs a user-owned copy and launches the current build without asking for an administrator password:
 

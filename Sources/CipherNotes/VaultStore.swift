@@ -124,6 +124,7 @@ final class VaultStore: ObservableObject {
 
     var isDeveloperDemoMode: Bool {
         ProcessInfo.processInfo.environment["CIPHERNOTES_ALLOW_CAPTURE"] == "1"
+            || Bundle.main.bundleIdentifier == "app.ciphernotes.local.developer"
     }
 
     func migrateLegacyVault(username: String, oldPassword: String) {
@@ -1757,11 +1758,25 @@ final class VaultStore: ObservableObject {
         )
         updateTags(noteID: third, tags: ["共享"])
 
-        vaultItems = [
-            VaultAttachment(fileName: "身份证扫描件.png", contentType: "image/png", byteCount: 2_400_000),
-            VaultAttachment(fileName: "家庭备份清单.pdf", contentType: "application/pdf", byteCount: 840_000),
-            VaultAttachment(fileName: "照片库归档.zip", contentType: "application/zip", byteCount: 10_240_000_000)
-        ]
+        // Keep the Developer build useful for screenshots: seed small, valid files
+        // that can actually be opened without pretending that large data exists.
+        if let userID = currentUserID, let rawKey = vaultKey {
+            let pngData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=") ?? Data()
+            let pdfData = Data("%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 57 >>\nstream\nBT /F1 18 Tf 36 110 Td (CipherNotes Developer Demo) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n".utf8)
+            let demoFiles: [(VaultAttachment, Data)] = [
+                (VaultAttachment(fileName: "开发者演示图片.png", contentType: "image/png", byteCount: pngData.count), pngData),
+                (VaultAttachment(fileName: "开发者演示文档.pdf", contentType: "application/pdf", byteCount: pdfData.count), pdfData),
+                (VaultAttachment(fileName: "开发者演示说明.txt", contentType: "text/plain", byteCount: 0), Data("这是 Developer 版的真实演示文件。\n它位于隔离临时保险柜中，不会读取普通版数据。\n".utf8))
+            ]
+            for (attachment, data) in demoFiles {
+                try? writeAttachmentData(data, for: attachment.id, userID: userID, rawKey: rawKey)
+            }
+            vaultItems = demoFiles.map { attachment, data in
+                var item = attachment
+                item.byteCount = data.count
+                return item
+            }
+        }
         setAdvancedDataProtectionForCurrentAccount(true)
         errorMessage = nil
         persist()

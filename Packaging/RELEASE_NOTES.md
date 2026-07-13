@@ -59,8 +59,10 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 
 ## Downloads
 
-- `密笺安装器.pkg`: recommended installer.
-- `密笺-macOS.zip`: portable app archive.
+- `密笺-<version>-普通版.pkg`: recommended public installer.
+- `密笺-<version>-普通版.zip`: public portable app archive.
+- `密笺-Developer-<version>.pkg`: isolated Developer build for screenshots and testing.
+- `密笺-Developer-<version>.zip`: isolated Developer portable archive.
 
 ## Verification Before Publishing
 

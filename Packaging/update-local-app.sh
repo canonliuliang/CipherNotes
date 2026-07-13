@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_SOURCE="/tmp/ciphernotes-appbuild/密笺.app"
 APP_DEST="/Applications/密笺.app"
-PKG_PATH="$ROOT_DIR/outputs/密笺安装器.pkg"
+source "$ROOT_DIR/Packaging/release.env"
+PKG_PATH="$ROOT_DIR/outputs/密笺-${CIPHERNOTES_VERSION}-普通版.pkg"
 
 cd "$ROOT_DIR"
 
