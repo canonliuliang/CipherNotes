@@ -1097,33 +1097,42 @@ struct NotesView: View {
                     ForEach(filteredNotes) { note in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 6) {
-                                if note.isPinned {
-                                    Image(systemName: "pin.fill")
-                                        .foregroundStyle(.orange)
+                                HStack(spacing: 5) {
+                                    if note.isPinned {
+                                        Image(systemName: "pin.fill")
+                                            .foregroundStyle(.orange)
+                                    }
+                                    if note.isFavorite {
+                                        Image(systemName: "star.fill")
+                                            .foregroundStyle(.yellow)
+                                    }
+                                    Text(note.title.isEmpty ? "无标题" : note.title)
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
                                 }
-                                if note.isFavorite {
-                                    Image(systemName: "star.fill")
-                                        .foregroundStyle(.yellow)
-                                }
-                                Text(note.title.isEmpty ? "无标题" : note.title)
-                                    .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(note.updatedAt, style: .relative)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
-                            Text(notePreviewText(for: note)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text(notePreviewText(for: note))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                             if !note.tags.isEmpty {
                                 HStack(spacing: 4) {
-                                    ForEach(note.tags.prefix(3), id: \.self) { tag in
+                                    ForEach(note.tags.prefix(2), id: \.self) { tag in
                                         Text("#\(tag)")
                                             .font(.caption2)
                                             .foregroundStyle(.mint)
                                     }
                                 }
+                                .lineLimit(1)
                             }
-                            Text(note.updatedAt, style: .relative)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                         .tag(note.id)
                         .contextMenu {
                             Button(note.isPinned ? "取消置顶" : "置顶") { store.togglePinned(noteID: note.id) }
