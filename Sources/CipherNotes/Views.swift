@@ -2053,13 +2053,26 @@ struct VaultView: View {
 
     private var vaultImportQueue: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("导入队列", systemImage: "arrow.down.doc.fill")
-                .font(.headline)
+            HStack {
+                Label("导入队列", systemImage: "arrow.down.doc.fill")
+                    .font(.headline)
+                Spacer()
+                if store.vaultImportJobs.contains(where: { !$0.isActive }) {
+                    Button {
+                        store.clearFinishedVaultImportJobs()
+                    } label: {
+                        Label("清除完成记录", systemImage: "checkmark.circle")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(ClearButtonStyle())
+                    .font(.caption)
+                }
+            }
             ForEach(store.vaultImportJobs.prefix(4)) { job in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
-                        Image(systemName: job.status == .failed ? "exclamationmark.triangle.fill" : "lock.rotation")
-                            .foregroundStyle(job.status == .failed ? .orange : .mint)
+                        Image(systemName: vaultImportIcon(for: job))
+                            .foregroundStyle(vaultImportTint(for: job))
                         Text(job.fileName)
                             .font(.callout.weight(.medium))
                             .lineLimit(1)
@@ -2067,7 +2080,7 @@ struct VaultView: View {
                         Spacer()
                         Text(job.status.label)
                             .font(.caption)
-                            .foregroundStyle(job.status == .failed ? .orange : .secondary)
+                            .foregroundStyle(vaultImportTint(for: job))
                     }
                     ProgressView(value: job.progress)
                         .progressViewStyle(.linear)
@@ -2075,6 +2088,17 @@ struct VaultView: View {
                         Text(ByteCountFormatter.string(fromByteCount: Int64(job.processedByteCount), countStyle: .file))
                         Text("/")
                         Text(ByteCountFormatter.string(fromByteCount: Int64(job.byteCount), countStyle: .file))
+                        if let remaining = job.estimatedRemainingSeconds {
+                            Text("·")
+                            Text("约 \(formattedRemainingTime(remaining))")
+                        }
+                        Spacer()
+                        if job.status == .encrypting {
+                            Button("取消") {
+                                store.cancelVaultImportJob(id: job.id)
+                            }
+                            .buttonStyle(ClearButtonStyle())
+                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -2089,6 +2113,33 @@ struct VaultView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(.primary.opacity(0.10), lineWidth: 1)
         }
+    }
+
+    private func vaultImportIcon(for job: VaultImportJob) -> String {
+        switch job.status {
+        case .encrypting: "lock.rotation"
+        case .cancelling: "xmark.circle"
+        case .finished: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .cancelled: "minus.circle.fill"
+        }
+    }
+
+    private func vaultImportTint(for job: VaultImportJob) -> Color {
+        switch job.status {
+        case .encrypting: .mint
+        case .cancelling, .cancelled: .secondary
+        case .finished: .green
+        case .failed: .orange
+        }
+    }
+
+    private func formattedRemainingTime(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return "\(max(1, Int(seconds.rounded()))) 秒"
+        }
+        let minutes = Int(ceil(seconds / 60))
+        return "\(minutes) 分钟"
     }
 
     private func showCeremony(_ message: String) {
@@ -2314,6 +2365,8 @@ struct SecurityCenterView: View {
     @State private var decoyConfirmation = ""
     @State private var decoyAction: DecoyPasswordAction = .openDecoySpace
     @State private var showDecoyDestructiveMode = false
+    @State private var updateCheckMessage = "尚未检查"
+    @State private var isCheckingForUpdates = false
 
     private var storeErrorPresented: Binding<Bool> {
         Binding(
@@ -2621,7 +2674,19 @@ struct SecurityCenterView: View {
     private var versionUpdateCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("版本与更新", systemImage: "arrow.down.circle.fill")
-            Text("当前公开下载包由 GitHub Release 自动构建。每次推送源码后，必须有对应 Release 工作流成功，用户下载到的才是最新版。")
+            securityRow(
+                title: "当前版本",
+                value: "\(currentAppVersion) (\(currentAppBuild))",
+                systemImage: "app.badge",
+                tint: .secondary
+            )
+            securityRow(
+                title: "最新版本",
+                value: updateCheckMessage,
+                systemImage: "arrow.triangle.2.circlepath.circle",
+                tint: isCheckingForUpdates ? .orange : .secondary
+            )
+            Text("检查更新只会手动访问 GitHub Releases latest，不上传笔记、账户、日志或本地数据。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2634,6 +2699,12 @@ struct SecurityCenterView: View {
     private var updateButtons: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
             Button {
+                checkForLatestRelease()
+            } label: {
+                Label(isCheckingForUpdates ? "正在检查" : "检查更新", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(isCheckingForUpdates)
+            Button {
                 NSWorkspace.shared.open(URL(string: "https://github.com/canonliuliang/CipherNotes/releases/latest")!)
             } label: {
                 Label("打开最新版下载页", systemImage: "arrow.down.circle")
@@ -2644,6 +2715,48 @@ struct SecurityCenterView: View {
                 Label("打开官网", systemImage: "safari")
             }
         }
+    }
+
+    private var currentAppVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版"
+    }
+
+    private var currentAppBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+    }
+
+    private func checkForLatestRelease() {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        updateCheckMessage = "正在连接 GitHub..."
+        Task {
+            do {
+                let release = try await fetchLatestRelease()
+                await MainActor.run {
+                    let tag = release.tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+                    if tag == currentAppVersion {
+                        updateCheckMessage = "已是最新版 · \(release.name)"
+                    } else {
+                        updateCheckMessage = "发现 \(release.tagName) · \(release.name)"
+                    }
+                    isCheckingForUpdates = false
+                }
+            } catch {
+                await MainActor.run {
+                    updateCheckMessage = "检查失败，可直接打开下载页"
+                    isCheckingForUpdates = false
+                }
+            }
+        }
+    }
+
+    private func fetchLatestRelease() async throws -> GitHubLatestRelease {
+        let url = URL(string: "https://api.github.com/repos/canonliuliang/CipherNotes/releases/latest")!
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(GitHubLatestRelease.self, from: data)
     }
 
     private func securityMetric(_ title: String, _ value: String, _ systemImage: String, _ tint: Color) -> some View {
@@ -2819,6 +2932,16 @@ struct SecurityCenterView: View {
             confirmationPrompt: "输入：关闭虚假密码"
         ) else { return }
         store.disableDecoyPasswordForCurrentAccount(currentPassword: auth.password, confirmationText: auth.confirmation)
+    }
+}
+
+private struct GitHubLatestRelease: Decodable {
+    let tagName: String
+    let name: String
+
+    enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name"
+        case name
     }
 }
 
@@ -3185,6 +3308,10 @@ struct ChangelogView: View {
                 "记事本与保险柜共用同一套窗口工具栏，避免切换时 macOS 重新计算工具栏高度。",
                 "笔记侧栏始终显示保护状态，标准保护和高级保护之间切换不再改变侧栏头部高度。",
                 "保险柜标题区和文件类型筛选改为稳定自适应布局，常见窗口宽度下不再突然换行。",
+                "发布流程新增共享校验脚本，本地打包、CI 和 GitHub Release 会检查版本、README、官网和应用内日志是否一致。",
+                "README 增加“为什么选择 CipherNotes”、发布安全检查和大文件保险柜说明，更像正式产品首页。",
+                "安全中心新增手动检查更新：显示当前版本/build，并对比 GitHub Releases latest。",
+                "保险柜导入队列新增取消导入、剩余时间估计和清除完成记录，处理大文件更安心。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
                 "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
                 "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",

@@ -479,6 +479,7 @@ enum VaultError: LocalizedError {
     case recoveryCodeMissing
     case biometricsUnavailable
     case touchIDNotConfigured
+    case importCancelled
     case keychain(OSStatus)
 
     var errorDescription: String? {
@@ -492,6 +493,7 @@ enum VaultError: LocalizedError {
         case .recoveryCodeMissing: "这个用户还没有恢复码，请先登录后生成恢复码"
         case .biometricsUnavailable: "这台 Mac 暂时无法使用 Touch ID"
         case .touchIDNotConfigured: "这个账户还没有启用 Touch ID"
+        case .importCancelled: "导入已取消"
         case .keychain(let status): "钥匙串操作失败（\(status)）"
         }
     }

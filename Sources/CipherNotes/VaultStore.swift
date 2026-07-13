@@ -6,14 +6,18 @@ import UniformTypeIdentifiers
 
 enum VaultImportJobStatus: String, Sendable {
     case encrypting
+    case cancelling
     case finished
     case failed
+    case cancelled
 
     var label: String {
         switch self {
         case .encrypting: "正在加密"
+        case .cancelling: "正在取消"
         case .finished: "已完成"
         case .failed: "导入失败"
+        case .cancelled: "已取消"
         }
     }
 }
@@ -24,10 +28,41 @@ struct VaultImportJob: Identifiable, Equatable, Sendable {
     var byteCount: Int
     var processedByteCount: Int
     var status: VaultImportJobStatus
+    var startedAt: Date = .now
+    var updatedAt: Date = .now
 
     var progress: Double {
         guard byteCount > 0 else { return status == .finished ? 1 : 0 }
         return min(1, max(0, Double(processedByteCount) / Double(byteCount)))
+    }
+
+    var isActive: Bool {
+        status == .encrypting || status == .cancelling
+    }
+
+    var estimatedRemainingSeconds: TimeInterval? {
+        guard status == .encrypting, processedByteCount > 0, byteCount > processedByteCount else { return nil }
+        let elapsed = max(0.1, updatedAt.timeIntervalSince(startedAt))
+        let bytesPerSecond = Double(processedByteCount) / elapsed
+        guard bytesPerSecond > 0 else { return nil }
+        return Double(byteCount - processedByteCount) / bytesPerSecond
+    }
+}
+
+private final class VaultImportCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
     }
 }
 
@@ -59,6 +94,7 @@ final class VaultStore: ObservableObject {
     private var eventMonitor: Any?
     private var idleTimer: Timer?
     private var notificationTokens: [NSObjectProtocol] = []
+    private var vaultImportCancellationTokens: [UUID: VaultImportCancellationToken] = [:]
     private var lastActivity = Date()
     private var imagePreviewCache: [UUID: NSImage] = [:]
     nonisolated private static let maxPreviewImageBytes = 12 * 1024 * 1024
@@ -871,7 +907,10 @@ final class VaultStore: ObservableObject {
                         contentType: Self.contentType(for: url),
                         byteCount: byteCount
                     )
-                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL) { processed in
+                    let token = vaultImportCancellationTokens[job.id]
+                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
+                        token?.isCancelled == true
+                    }) { processed in
                         Task { @MainActor in
                             self.updateVaultImportJob(id: job.id, processedByteCount: processed)
                         }
@@ -899,10 +938,21 @@ final class VaultStore: ObservableObject {
                 }
                 recordSecurityEvent(.vaultFilesImported, message: "已加密移入 \(importedItems.count) 个保险柜文件")
             } catch {
-                importJobs.forEach { finishVaultImportJob(id: $0.id, status: .failed) }
+                let status: VaultImportJobStatus
+                if case .importCancelled = error as? VaultError {
+                    status = .cancelled
+                } else {
+                    status = .failed
+                }
+                importJobs.forEach { finishVaultImportJob(id: $0.id, status: status) }
                 importedItems.forEach { try? Self.removeAttachmentBlob(id: $0.id, userID: currentUserID, vaultURL: vaultURL) }
-                errorMessage = "移入保险柜失败：\(error.localizedDescription)"
-                recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
+                if status == .cancelled {
+                    errorMessage = "保险柜导入已取消"
+                    recordSecurityEvent(.vaultFilesImported, result: .blocked, message: "保险柜文件导入已取消")
+                } else {
+                    errorMessage = "移入保险柜失败：\(error.localizedDescription)"
+                    recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
+                }
             }
             return
         }
@@ -921,7 +971,12 @@ final class VaultStore: ObservableObject {
                         contentType: Self.contentType(for: url),
                         byteCount: byteCount
                     )
-                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL) { processed in
+                    let token = await MainActor.run {
+                        self.vaultImportCancellationTokens[job.id]
+                    }
+                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
+                        token?.isCancelled == true
+                    }) { processed in
                         Task { @MainActor in
                             self.updateVaultImportJob(id: job.id, processedByteCount: processed)
                         }
@@ -968,12 +1023,35 @@ final class VaultStore: ObservableObject {
                     try? Self.removeAttachmentBlob(id: item.id, userID: currentUserID, vaultURL: vaultURL)
                 }
                 await MainActor.run {
-                    importJobs.forEach { self.finishVaultImportJob(id: $0.id, status: .failed) }
-                    self.errorMessage = "移入保险柜失败：\(error.localizedDescription)"
-                    self.recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
+                    let status: VaultImportJobStatus
+                    if case .importCancelled = error as? VaultError {
+                        status = .cancelled
+                    } else {
+                        status = .failed
+                    }
+                    importJobs.forEach { self.finishVaultImportJob(id: $0.id, status: status) }
+                    if status == .cancelled {
+                        self.errorMessage = "保险柜导入已取消"
+                        self.recordSecurityEvent(.vaultFilesImported, result: .blocked, message: "保险柜文件导入已取消")
+                    } else {
+                        self.errorMessage = "移入保险柜失败：\(error.localizedDescription)"
+                        self.recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
+                    }
                 }
             }
         }
+    }
+
+    func cancelVaultImportJob(id: UUID) {
+        vaultImportCancellationTokens[id]?.cancel()
+        guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }),
+              vaultImportJobs[index].status == .encrypting else { return }
+        vaultImportJobs[index].status = .cancelling
+        vaultImportJobs[index].updatedAt = .now
+    }
+
+    func clearFinishedVaultImportJobs() {
+        vaultImportJobs.removeAll { !$0.isActive }
     }
 
     private func beginVaultImportJobs(for urls: [URL]) -> [VaultImportJob] {
@@ -983,8 +1061,13 @@ final class VaultStore: ObservableObject {
                 fileName: Self.sanitizedFileName(url.lastPathComponent),
                 byteCount: (try? Self.fileByteCount(at: url)) ?? 0,
                 processedByteCount: 0,
-                status: .encrypting
+                status: .encrypting,
+                startedAt: .now,
+                updatedAt: .now
             )
+        }
+        for job in jobs {
+            vaultImportCancellationTokens[job.id] = VaultImportCancellationToken()
         }
         vaultImportJobs.insert(contentsOf: jobs, at: 0)
         vaultImportJobs = Array(vaultImportJobs.prefix(12))
@@ -994,11 +1077,14 @@ final class VaultStore: ObservableObject {
     private func updateVaultImportJob(id: UUID, processedByteCount: Int) {
         guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }) else { return }
         vaultImportJobs[index].processedByteCount = processedByteCount
+        vaultImportJobs[index].updatedAt = .now
     }
 
     private func finishVaultImportJob(id: UUID, status: VaultImportJobStatus) {
         guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }) else { return }
         vaultImportJobs[index].status = status
+        vaultImportJobs[index].updatedAt = .now
+        vaultImportCancellationTokens[id] = nil
         if status == .finished {
             vaultImportJobs[index].processedByteCount = vaultImportJobs[index].byteCount
         }
@@ -1182,6 +1268,7 @@ final class VaultStore: ObservableObject {
         rawKey: Data,
         byteCount: Int,
         vaultURL: URL,
+        shouldCancel: @Sendable () -> Bool = { false },
         progress: @Sendable (Int) -> Void = { _ in }
     ) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID, vaultURL: vaultURL), withIntermediateDirectories: true)
@@ -1197,6 +1284,12 @@ final class VaultStore: ObservableObject {
         try writeAttachmentHeader(to: output, byteCount: byteCount)
         var processedByteCount = 0
         while true {
+            if shouldCancel() {
+                try? output.close()
+                try? input.close()
+                try? FileManager.default.removeItem(at: destinationURL)
+                throw VaultError.importCancelled
+            }
             let chunk = try input.read(upToCount: attachmentChunkSize) ?? Data()
             if chunk.isEmpty { break }
             try writeEncryptedAttachmentChunk(chunk, to: output, rawKey: rawKey)

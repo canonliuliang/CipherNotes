@@ -35,6 +35,16 @@ Requires macOS 14 or later.
 - Local backup and restore.
 - Free: no membership, purchase flow, restore purchase, or paid switch.
 
+## Why Choose CipherNotes
+
+CipherNotes is intentionally boring about privacy: your data stays on your Mac, the app has no account server, and the safest default is to keep private notes and files out of sync products you do not control.
+
+- Local-first by design: no remote login, sync service, analytics endpoint, or paid cloud feature.
+- Clear account boundaries: local accounts can be listed on the login screen, but each account's notes, file vault, recovery code, Touch ID key, and security log are protected separately.
+- Built for offline files: the vault stores photos, scans, PDFs, archives, and large files as encrypted chunks instead of loading the whole file into memory.
+- Defensive UX: Advanced Data Protection hides previews, blocks export/share/copy paths, tightens auto-lock, and writes local security events without leaking note titles or filenames.
+- Predictable updates: public downloads come only from GitHub Releases, so every installer has release notes, version metadata, and reproducible packaging steps.
+
 ## Screenshots And Website
 
 - Product website: [canonliuliang.github.io/CipherNotes](https://canonliuliang.github.io/CipherNotes/)
@@ -125,6 +135,20 @@ git push origin v1.0.4
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
 
 The `Release` workflow validates the version, runs the package script, creates or updates the GitHub Release, and uploads the generated `pkg`, `zip`, release notes, usage guide, website output, and icon.
+
+## Release Safety Checks
+
+`Packaging/validate-release.sh` is shared by local packaging, CI, and the GitHub Release workflow. It fails the build if release metadata drifts across:
+
+- `Packaging/release.env`
+- `Packaging/RELEASE_NOTES.md`
+- `Packaging/Info.plist`
+- `README.md`
+- `Website/index.html`
+- `docs/index.html`
+- the in-app changelog in `Sources/CipherNotes/Views.swift`
+
+This keeps the app version, GitHub download page, website, README, and in-app update log aligned before users see a release.
 
 ## Upgrade From Older Vaults
 

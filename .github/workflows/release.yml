@@ -46,9 +46,7 @@ jobs:
             echo "Release tag ${release_tag} does not match Packaging/release.env version ${expected_tag}" >&2
             exit 1
           fi
-          grep -q "Current release: \`${CIPHERNOTES_VERSION}\`" README.md
-          grep -q "当前发布包 ${CIPHERNOTES_VERSION}" Website/index.html
-          grep -q "version: \"${CIPHERNOTES_VERSION}\"" Sources/CipherNotes/Views.swift
+          Packaging/validate-release.sh --tag "${release_tag}"
           {
             echo "RELEASE_TAG=${release_tag}"
             echo "RELEASE_VERSION=${CIPHERNOTES_VERSION}"

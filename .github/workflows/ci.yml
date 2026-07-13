@@ -23,6 +23,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/swiftpm-cache"
           mkdir -p "$RUNNER_TEMP/ciphernotes-test"
 
+      - name: Validate release metadata
+        run: Packaging/validate-release.sh
+
       - name: Run tests
         run: swift test --scratch-path "$RUNNER_TEMP/ciphernotes-test"
         env:

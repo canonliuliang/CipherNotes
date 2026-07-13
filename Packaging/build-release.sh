@@ -14,9 +14,7 @@ cd "$ROOT_DIR"
 
 source "$ROOT_DIR/Packaging/release.env"
 
-grep -q "version: \"$CIPHERNOTES_VERSION\"" "$ROOT_DIR/Sources/CipherNotes/Views.swift"
-grep -q "Current release: \`$CIPHERNOTES_VERSION\`" "$ROOT_DIR/README.md"
-grep -q "当前发布包 $CIPHERNOTES_VERSION" "$ROOT_DIR/Website/index.html"
+"$ROOT_DIR/Packaging/validate-release.sh"
 
 mkdir -p "$ROOT_DIR/Assets"
 if [ ! -f "$ROOT_DIR/Assets/AppIcon.icns" ] || [ ! -f "$ROOT_DIR/Assets/AppIcon-1024.png" ]; then
