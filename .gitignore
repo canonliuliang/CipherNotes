@@ -4,5 +4,6 @@ work/
 outputs/
 Assets/AppIcon-1024.png
 Assets/AppIcon.icns
+Assets/DeveloperAppIcon.icns
 *.xcuserstate
 *.swp

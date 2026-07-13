@@ -10,6 +10,7 @@ OUTPUTS_DIR="$ROOT_DIR/outputs"
 PRODUCTBUILD_LOG="/tmp/ciphernotes-productbuild.log"
 ICONBUILD_DIR="/tmp/ciphernotes-iconbuild"
 ICONSET_DIR="$ICONBUILD_DIR/AppIcon.iconset"
+DEVELOPER_ICONSET_DIR="$ICONBUILD_DIR/DeveloperIcon.iconset"
 
 cd "$ROOT_DIR"
 
@@ -22,6 +23,7 @@ rm -rf "$ICONSET_DIR"
 mkdir -p "$ICONSET_DIR"
 swift Packaging/generate-icon.swift
 iconutil -c icns "$ICONSET_DIR" -o "$ROOT_DIR/Assets/AppIcon.icns"
+iconutil -c icns "$DEVELOPER_ICONSET_DIR" -o "$ROOT_DIR/Assets/DeveloperAppIcon.icns"
 swift test --scratch-path /tmp/ciphernotes-test
 swift build -c release --scratch-path "$BUILD_DIR"
 
@@ -39,7 +41,11 @@ make_app() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$app_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $CIPHERNOTES_VERSION" "$app_path/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CIPHERNOTES_BUILD" "$app_path/Contents/Info.plist"
-    cp "$ROOT_DIR/Assets/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
+    local icon_path="$ROOT_DIR/Assets/AppIcon.icns"
+    if [ "$bundle_id" = "app.ciphernotes.local.developer" ]; then
+        icon_path="$ROOT_DIR/Assets/DeveloperAppIcon.icns"
+    fi
+    cp "$icon_path" "$app_path/Contents/Resources/AppIcon.icns"
     chmod +x "$app_path/Contents/MacOS/CipherNotes"
     xattr -cr "$app_path" >/dev/null 2>&1 || true
     codesign --force --sign - "$app_path"
@@ -63,7 +69,10 @@ NORMAL_PKG="$OUTPUTS_DIR/密笺-${CIPHERNOTES_VERSION}-普通版.pkg"
 DEVELOPER_PKG="$OUTPUTS_DIR/密笺-Developer-${CIPHERNOTES_VERSION}.pkg"
 NORMAL_ZIP="$OUTPUTS_DIR/密笺-${CIPHERNOTES_VERSION}-普通版.zip"
 DEVELOPER_ZIP="$OUTPUTS_DIR/密笺-Developer-${CIPHERNOTES_VERSION}.zip"
-rm -f "$NORMAL_PKG" "$DEVELOPER_PKG" "$NORMAL_ZIP" "$DEVELOPER_ZIP"
+# Remove pre-1.0.7 single-app artifacts so outputs always contains exactly
+# one public package and one isolated Developer package.
+rm -f "$NORMAL_PKG" "$DEVELOPER_PKG" "$NORMAL_ZIP" "$DEVELOPER_ZIP" \
+    "$OUTPUTS_DIR/密笺安装器.pkg" "$OUTPUTS_DIR/密笺-macOS.zip"
 if productbuild --component "$APP_PATH" /Applications "$NORMAL_PKG" >"$PRODUCTBUILD_LOG" 2>&1; then
     grep -v '^write: Permission denied$' "$PRODUCTBUILD_LOG" || true
 else

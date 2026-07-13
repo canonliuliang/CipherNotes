@@ -7,9 +7,12 @@ let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let assets = root.appendingPathComponent("Assets", isDirectory: true)
 let iconBuild = URL(fileURLWithPath: "/tmp/ciphernotes-iconbuild", isDirectory: true)
 let iconset = iconBuild.appendingPathComponent("AppIcon.iconset", isDirectory: true)
+let developerIconset = iconBuild.appendingPathComponent("DeveloperIcon.iconset", isDirectory: true)
 
 try? FileManager.default.removeItem(at: iconset)
+try? FileManager.default.removeItem(at: developerIconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: developerIconset, withIntermediateDirectories: true)
 
 struct Stop {
     let t: CGFloat
@@ -73,7 +76,7 @@ extension NSShadow {
     }
 }
 
-func drawIcon(size: Int) -> CGImage {
+func drawIcon(size: Int, developer: Bool = false) -> CGImage {
     let scale = CGFloat(size) / 1024
     let colorSpace = CGColorSpaceCreateDeviceRGB()
     let context = CGContext(
@@ -99,19 +102,24 @@ func drawIcon(size: Int) -> CGImage {
         CGRect(x: s(x), y: s(y), width: s(w), height: s(h))
     }
 
-    // Keep the mark intentionally quiet: a single native SF Symbol on a macOS-style tile.
+    // The public icon stays quiet. Developer uses a darker workbench palette and
+    // a small native tool badge so it is unmistakable in Finder and Spotlight.
     let base = roundedRect(r(72, 72, 880, 880), radius: s(218))
-    drawShadow(base, color: c(8, 30, 64, 0.22), blur: s(44), y: s(-18))
+    drawShadow(base, color: developer ? c(8, 8, 18, 0.34) : c(8, 30, 64, 0.22), blur: s(44), y: s(-18))
     context.saveGState()
     base.addClip()
-    fillLinear(canvas, stops: [
+    fillLinear(canvas, stops: developer ? [
+        Stop(t: 0.00, color: c(35, 30, 76)),
+        Stop(t: 0.52, color: c(68, 50, 132)),
+        Stop(t: 1.00, color: c(18, 116, 124))
+    ] : [
         Stop(t: 0.00, color: c(32, 102, 214)),
         Stop(t: 0.52, color: c(44, 145, 226)),
         Stop(t: 1.00, color: c(46, 181, 174))
     ])
     context.restoreGState()
 
-    c(255, 255, 255, 0.34).setStroke()
+    (developer ? c(255, 184, 76, 0.72) : c(255, 255, 255, 0.34)).setStroke()
     base.lineWidth = s(2)
     base.stroke()
 
@@ -132,6 +140,14 @@ func drawIcon(size: Int) -> CGImage {
         height: symbolSizeValue.height
     )
     symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1)
+
+    if developer,
+       let tool = NSImage(systemSymbolName: "hammer.fill", accessibilityDescription: "Developer")?.withSymbolConfiguration(
+        NSImage.SymbolConfiguration(pointSize: CGFloat(size) * 0.17, weight: .bold, scale: .large)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [c(255, 190, 82)]))
+       ) {
+        tool.draw(in: r(650, 650, 190, 190), from: .zero, operation: .sourceOver, fraction: 1)
+    }
 
     NSGraphicsContext.restoreGraphicsState()
     return context.makeImage()!
@@ -162,6 +178,7 @@ let slots: [(String, Int)] = [
 
 for (name, size) in slots {
     try savePNG(drawIcon(size: size), to: iconset.appendingPathComponent(name))
+    try savePNG(drawIcon(size: size, developer: true), to: developerIconset.appendingPathComponent(name))
 }
 
 try savePNG(drawIcon(size: 1024), to: assets.appendingPathComponent("AppIcon-1024.png"))
