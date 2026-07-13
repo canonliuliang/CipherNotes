@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -1229,7 +1230,7 @@ struct NotesView: View {
 
     private var protectionStatusBadge: some View {
         Label(
-            store.currentAccountAdvancedDataProtectionEnabled ? "高级数据保护已开启" : "标准保护模式",
+            store.currentAccountAdvancedDataProtectionEnabled ? "最高保护模式已开启" : "标准保护模式",
             systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
         )
         .font(.caption)
@@ -1247,7 +1248,7 @@ struct NotesView: View {
             )
             mainStatusPill(
                 "保护模式",
-                value: store.currentAccountAdvancedDataProtectionEnabled ? "高级保护" : "标准保护",
+                value: store.currentAccountAdvancedDataProtectionEnabled ? "最高保护" : "标准保护",
                 systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield",
                 tint: store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary
             )
@@ -1353,7 +1354,7 @@ struct NotesView: View {
                 Label(store.currentAccountTouchIDEnabled ? "关闭当前账户 Touch ID" : "为当前账户启用 Touch ID", systemImage: "touchid")
             }
         }
-        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级数据保护" : "开启高级数据保护") {
+        Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式") {
             store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
         }
         Button("生成新的恢复码") {
@@ -1899,7 +1900,7 @@ struct VaultView: View {
                 .disabled(store.currentAccountAdvancedDataProtectionEnabled)
                 .overlay(alignment: .trailing) {
                     if store.currentAccountAdvancedDataProtectionEnabled {
-                        Text("高级保护已隐藏文件名搜索")
+                        Text("最高保护已隐藏文件名搜索")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.trailing, 8)
@@ -2159,6 +2160,7 @@ struct VaultItemCard: View {
     @EnvironmentObject private var store: VaultStore
     let item: VaultAttachment
     @State private var preview: NSImage?
+    @State private var previewPayload: VaultPreviewPayload?
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
@@ -2190,8 +2192,12 @@ struct VaultItemCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
-                Button("导出") { exportItem() }
-                Button("复制文件名") { copyFileName() }
+                Button("查看") { openInternalPreview() }
+                    .disabled(!canPreviewInternally)
+                Button(protected ? "导出已禁用" : "导出") { exportItem() }
+                    .disabled(protected)
+                Button(protected ? "复制已禁用" : "复制文件名") { copyFileName() }
+                    .disabled(protected)
                 Spacer()
                 Button("删除", role: .destructive) { store.deleteVaultItem(itemID: item.id) }
             }
@@ -2211,9 +2217,24 @@ struct VaultItemCard: View {
                 preview = nil
             }
         }
+        .sheet(item: $previewPayload, onDismiss: {
+            previewPayload = nil
+            store.clearSensitivePreviewCaches()
+        }) { payload in
+            VaultInternalPreviewView(payload: payload)
+        }
     }
 
     private var isImage: Bool { item.contentType?.hasPrefix("image/") == true }
+    private var isPDF: Bool { item.contentType == "application/pdf" || item.fileName.lowercased().hasSuffix(".pdf") }
+    private var isText: Bool {
+        item.contentType?.hasPrefix("text/") == true
+        || ["txt", "md", "markdown", "json", "csv", "log", "xml", "yaml", "yml"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
+    }
+
+    private var canPreviewInternally: Bool {
+        isImage || isPDF || isText
+    }
 
     private var systemImage: String {
         if item.contentType == "application/pdf" { return "doc.richtext" }
@@ -2221,6 +2242,31 @@ struct VaultItemCard: View {
         if item.contentType?.hasPrefix("video/") == true { return "film" }
         if item.contentType?.hasPrefix("text/") == true { return "doc.text" }
         return "doc.fill"
+    }
+
+    private func openInternalPreview() {
+        guard canPreviewInternally else {
+            store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
+            return
+        }
+        if isText && item.byteCount > 5 * 1024 * 1024 {
+            store.errorMessage = "文本文件超过 5MB，暂不在内置查看器中打开"
+            return
+        }
+        guard let data = store.internalVaultPreviewData(itemID: item.id) else { return }
+        if isImage, let image = NSImage(data: data) {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .image(image))
+            return
+        }
+        if isPDF {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .pdf(data))
+            return
+        }
+        if isText, let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .text(text))
+            return
+        }
+        store.errorMessage = "这个文件无法在内置查看器中打开"
     }
 
     private func exportItem() {
@@ -2239,6 +2285,104 @@ struct VaultItemCard: View {
         store.errorMessage = "文件名已复制"
         store.recordSecurityEvent(.vaultFileNameCopied, message: "已复制 1 个保险柜文件名")
     }
+}
+
+private struct VaultPreviewPayload: Identifiable {
+    let id = UUID()
+    let title: String
+    let kind: VaultPreviewKind
+}
+
+private enum VaultPreviewKind {
+    case image(NSImage)
+    case text(String)
+    case pdf(Data)
+}
+
+private struct VaultInternalPreviewView: View {
+    @Environment(\.dismiss) private var dismiss
+    let payload: VaultPreviewPayload
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(payload.title, systemImage: iconName)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            Text("内置无落盘查看：内容只在密笺内解密显示，不交给外部 App。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Divider()
+            content
+        }
+        .padding(18)
+        .frame(minWidth: 680, idealWidth: 820, minHeight: 520, idealHeight: 640)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch payload.kind {
+        case .image(let image):
+            ScrollView([.horizontal, .vertical]) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(8)
+            }
+            .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case .text(let text):
+            ScrollView {
+                Text(text)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case .pdf(let data):
+            VaultPDFPreview(data: data)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private var iconName: String {
+        switch payload.kind {
+        case .image: "photo"
+        case .text: "doc.text"
+        case .pdf: "doc.richtext"
+        }
+    }
+}
+
+private struct VaultPDFPreview: NSViewRepresentable {
+    let data: Data
+
+    func makeNSView(context: Context) -> PDFView {
+        let view = NoCopyPDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        nsView.document = PDFDocument(data: data)
+    }
+}
+
+private final class NoCopyPDFView: PDFView {
+    override var menu: NSMenu? {
+        get { nil }
+        set { }
+    }
+
+    override var acceptsFirstResponder: Bool { false }
 }
 
 struct ShareExportView: View {
@@ -2410,7 +2554,7 @@ struct SecurityCenterView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("保护状态", systemImage: "checkmark.shield.fill")
                         securityRow(
-                            title: "高级数据保护",
+                            title: "最高保护模式",
                             value: store.currentAccountAdvancedDataProtectionEnabled ? "已开启" : "未开启",
                             systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield",
                             tint: store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary
@@ -2442,7 +2586,7 @@ struct SecurityCenterView: View {
                         .pickerStyle(.segmented)
                         .disabled(store.currentAccountAdvancedDataProtectionEnabled)
                         if store.currentAccountAdvancedDataProtectionEnabled {
-                            Text("高级数据保护开启时，自动锁定固定为 1 分钟。")
+                            Text("最高保护模式开启时，自动锁定固定为 1 分钟。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -2627,7 +2771,7 @@ struct SecurityCenterView: View {
             Button {
                 store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
             } label: {
-                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护" : "开启高级保护", systemImage: "shield.lefthalf.filled")
+                                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护" : "开启最高保护", systemImage: "shield.lefthalf.filled")
             }
             .buttonStyle(.borderedProminent)
             if store.biometricsAvailable {
@@ -2784,9 +2928,9 @@ struct SecurityCenterView: View {
                     .foregroundStyle(store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "高级保护模式正在运行" : "高级保护模式未开启")
+                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "最高保护模式正在运行" : "最高保护模式未开启")
                         .font(.headline)
-                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "当前账户已收紧自动锁定，并阻止复制、普通导出、共享导入导出、保险柜预览和文件名复制。" : "适合在借用设备、展示屏幕或处理敏感文件前开启。")
+                    Text(store.currentAccountAdvancedDataProtectionEnabled ? "文件只在密笺内解密查看，不交给外部 App；复制、导出、共享、外部预览和文件名复制都会被阻止。" : "适合在设备可能离开你手边、借用设备、展示屏幕或处理敏感文件前开启。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2796,15 +2940,15 @@ struct SecurityCenterView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
                 protectionCapability("自动锁定", "1 分钟", "timer")
-                protectionCapability("隐藏预览", "笔记与图片", "eye.slash.fill")
-                protectionCapability("阻止导出", "笔记与文件", "square.and.arrow.up")
+                protectionCapability("内置查看", "不交外部 App", "eye.fill")
+                protectionCapability("阻止导出", "明文不落盘", "square.and.arrow.up")
                 protectionCapability("脱敏日志", "不暴露名称", "list.bullet.rectangle")
             }
 
             Button {
                 store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
             } label: {
-                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭高级保护模式" : "开启高级保护模式", systemImage: "shield.lefthalf.filled")
+                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式", systemImage: "shield.lefthalf.filled")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -3312,6 +3456,9 @@ struct ChangelogView: View {
                 "README 增加“为什么选择 CipherNotes”、发布安全检查和大文件保险柜说明，更像正式产品首页。",
                 "安全中心新增手动检查更新：显示当前版本/build，并对比 GitHub Releases latest。",
                 "保险柜导入队列新增取消导入、剩余时间估计和清除完成记录，处理大文件更安心。",
+                "保险柜新增图片、文本和 PDF 内置无落盘查看器，最高保护模式下不用交给外部 App 打开。",
+                "安全中心将高级数据保护升级为“最高保护模式”文案，强调内置查看、阻止外部导出和锁定清理。",
+                "附件目录自动写入 .metadata_never_index，减少 Spotlight 对保险柜密文目录的索引噪音。",
                 "账户与安全里的危险操作改为双确认提示：删除当前账户和清空全部数据分别显示自己的确认文字。",
                 "当前账户密码和确认文字未满足前，删除/清空按钮保持不可点，减少误操作和无效弹窗。",
                 "安全中心和账户与安全窗口改为更弹性的尺寸，减少内容挤压和显示不全。",

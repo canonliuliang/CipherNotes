@@ -173,6 +173,13 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 - Moved the workspace toolbar to the shared container so Notes and Vault keep the same chrome height.
 - Kept the notes sidebar protection status visible in both standard and advanced modes to avoid header height changes.
 - Made the Vault header and file-type filter adapt without sudden wrapping at common window widths.
+- Added shared release validation for local packaging, CI, and GitHub Release publishing.
+- Improved the README with a clearer product story, "Why Choose CipherNotes", release safety checks, and large-file vault positioning.
+- Added an in-app manual update check that compares the current app version with GitHub Releases latest.
+- Improved vault large-file imports with cancellation, remaining-time estimates, and clearable completed import records.
+- Added no-temp-file internal vault viewers for images, text, and PDFs so protected files do not need external apps.
+- Reframed Advanced Data Protection as a stricter Highest Protection mode in the security UI.
+- Added attachment-directory Spotlight prevention with `.metadata_never_index` and lock-time preview cache cleanup.
 - Improved the Account & Security danger zone: delete-account and erase-all-data now show separate confirmation requirements.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Changed Security Center and Account & Security sheets to use more flexible window sizing.

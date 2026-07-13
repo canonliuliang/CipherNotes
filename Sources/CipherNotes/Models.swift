@@ -194,6 +194,7 @@ enum SecurityLogEventType: String, Codable, Sendable {
     case sharedNoteExported
     case sharedNoteImported
     case vaultFilesImported
+    case vaultFileViewed
     case vaultFileExported
     case vaultFileDeleted
     case vaultFileNameCopied
@@ -225,6 +226,7 @@ enum SecurityLogEventType: String, Codable, Sendable {
         case .sharedNoteExported: "导出共享文件"
         case .sharedNoteImported: "导入共享文件"
         case .vaultFilesImported: "导入保险柜文件"
+        case .vaultFileViewed: "查看保险柜文件"
         case .vaultFileExported: "导出保险柜文件"
         case .vaultFileDeleted: "删除保险柜文件"
         case .vaultFileNameCopied: "复制文件名"
@@ -252,7 +254,7 @@ enum SecurityLogEventType: String, Codable, Sendable {
             return .advancedProtection
         case .noteExported, .sharedNoteExported, .sharedNoteImported, .backupCreated, .backupRestored:
             return .transfer
-        case .vaultFilesImported, .vaultFileExported, .vaultFileDeleted, .vaultFileNameCopied:
+        case .vaultFilesImported, .vaultFileViewed, .vaultFileExported, .vaultFileDeleted, .vaultFileNameCopied:
             return .vault
         case .accountDeleted, .dataErased, .securityLogsCleared:
             return .danger

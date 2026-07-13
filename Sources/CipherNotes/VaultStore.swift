@@ -122,6 +122,7 @@ final class VaultStore: ObservableObject {
         userCount = Self.userCount(at: self.vaultURL)
         accounts = Self.accountSummaries(at: self.vaultURL)
         cleanOrphanedAttachments()
+        ensureAttachmentsNeverIndexed()
         installPrivacyObservers()
         seedDemoVaultIfRequested()
     }
@@ -782,7 +783,7 @@ final class VaultStore: ObservableObject {
         notes.removeAll(keepingCapacity: false)
         vaultItems.removeAll(keepingCapacity: false)
         securityLogs.removeAll(keepingCapacity: false)
-        imagePreviewCache.removeAll(keepingCapacity: false)
+        clearSensitivePreviewCaches()
         let keyByteCount = vaultKey?.count ?? 0
         vaultKey?.resetBytes(in: 0..<keyByteCount)
         vaultKey = nil
@@ -1104,6 +1105,28 @@ final class VaultStore: ObservableObject {
         }
     }
 
+    func internalVaultPreviewData(itemID: UUID) -> Data? {
+        guard vaultItems.contains(where: { $0.id == itemID }), let vaultKey, let currentUserID else { return nil }
+        do {
+            let data = try readAttachmentData(id: itemID, userID: currentUserID, rawKey: vaultKey)
+            imagePreviewCache.removeValue(forKey: itemID)
+            recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
+            return data
+        } catch {
+            errorMessage = "读取保险柜文件失败：\(error.localizedDescription)"
+            recordSecurityEvent(.vaultFileViewed, result: .failure, message: "保险柜文件内部查看失败")
+            return nil
+        }
+    }
+
+    func clearSensitivePreviewCaches(recordEvent: Bool = false) {
+        let hadPreviewCache = !imagePreviewCache.isEmpty
+        imagePreviewCache.removeAll(keepingCapacity: false)
+        if recordEvent && hadPreviewCache {
+            recordSecurityEvent(.protectedActionBlocked, message: "锁定时已清理保险柜预览缓存")
+        }
+    }
+
     func exportVaultItem(itemID: UUID, to destinationURL: URL) {
         if blockAdvancedProtectionAction("高级数据保护已开启，保险柜文件导出已阻止") { return }
         guard vaultItems.contains(where: { $0.id == itemID }), let vaultKey, let currentUserID else { return }
@@ -1415,6 +1438,19 @@ final class VaultStore: ObservableObject {
 
     private func attachmentsRootURL() -> URL {
         vaultURL.deletingLastPathComponent().appendingPathComponent("Attachments", isDirectory: true)
+    }
+
+    private func ensureAttachmentsNeverIndexed() {
+        let root = attachmentsRootURL()
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let marker = root.appendingPathComponent(".metadata_never_index", isDirectory: false)
+            if !FileManager.default.fileExists(atPath: marker.path) {
+                FileManager.default.createFile(atPath: marker.path, contents: Data(), attributes: nil)
+            }
+        } catch {
+            errorMessage = "保险柜防索引标记创建失败：\(error.localizedDescription)"
+        }
     }
 
     nonisolated private static func attachmentsRootURL(vaultURL: URL) -> URL {

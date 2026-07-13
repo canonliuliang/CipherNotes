@@ -25,6 +25,9 @@ CipherNotes is a privacy-first, fully local encrypted notes app and file vault f
 - Improved the README with a clearer product story, "Why Choose CipherNotes", release safety checks, and large-file vault positioning.
 - Added an in-app manual update check that compares the current app version with GitHub Releases latest.
 - Improved vault large-file imports with cancellation, remaining-time estimates, and clearable completed import records.
+- Added no-temp-file internal vault viewers for images, text, and PDFs so protected files do not need to be opened in external apps.
+- Reframed Advanced Data Protection as a stricter Highest Protection mode in the security UI.
+- Added attachment-directory Spotlight prevention with `.metadata_never_index` and lock-time preview cache cleanup.
 - Improved the Account & Security danger zone with separate confirmation guidance for deleting the current account and erasing all CipherNotes data.
 - Disabled destructive buttons until the current password is entered and the exact confirmation text matches the selected action.
 - Made Security Center and Account & Security sheets more adaptable, reducing cramped layouts and inaccessible content.
