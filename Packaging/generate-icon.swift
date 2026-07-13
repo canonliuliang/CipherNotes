@@ -93,100 +93,45 @@ func drawIcon(size: Int) -> CGImage {
 
     let canvas = CGRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size))
     context.clear(canvas)
-    c(237, 246, 255).setFill()
-    NSBezierPath(rect: canvas).fill()
 
     func s(_ value: CGFloat) -> CGFloat { value * scale }
     func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
         CGRect(x: s(x), y: s(y), width: s(w), height: s(h))
     }
 
+    // Keep the mark intentionally quiet: a single native SF Symbol on a macOS-style tile.
     let base = roundedRect(r(72, 72, 880, 880), radius: s(218))
-    drawShadow(base, color: c(8, 30, 64, 0.26), blur: s(54), y: s(-20))
+    drawShadow(base, color: c(8, 30, 64, 0.22), blur: s(44), y: s(-18))
     context.saveGState()
     base.addClip()
     fillLinear(canvas, stops: [
-        Stop(t: 0.00, color: c(11, 93, 214)),
-        Stop(t: 0.36, color: c(24, 139, 232)),
-        Stop(t: 0.72, color: c(35, 196, 195)),
-        Stop(t: 1.00, color: c(111, 226, 198))
+        Stop(t: 0.00, color: c(32, 102, 214)),
+        Stop(t: 0.52, color: c(44, 145, 226)),
+        Stop(t: 1.00, color: c(46, 181, 174))
     ])
-
-    let glow = NSGradient(colors: [
-        c(255, 255, 255, 0.45),
-        c(255, 255, 255, 0.02)
-    ])
-    glow?.draw(in: roundedRect(r(112, 552, 560, 300), radius: s(150)), angle: -28)
-
-    c(255, 255, 255, 0.11).setFill()
-    roundedRect(r(540, 94, 330, 618), radius: s(96)).fill()
-    c(3, 48, 119, 0.12).setFill()
-    roundedRect(r(78, 82, 874, 248), radius: s(180)).fill()
     context.restoreGState()
 
     c(255, 255, 255, 0.34).setStroke()
     base.lineWidth = s(2)
     base.stroke()
 
-    let backCard = roundedRect(r(286, 200, 440, 590), radius: s(82))
-    drawShadow(backCard, color: c(5, 34, 85, 0.20), blur: s(42), y: s(-16))
-    c(226, 247, 255, 0.30).setFill()
-    backCard.fill()
-
-    let frontCard = roundedRect(r(234, 238, 506, 548), radius: s(90))
-    drawShadow(frontCard, color: c(2, 30, 78, 0.24), blur: s(42), y: s(-14))
-    context.saveGState()
-    frontCard.addClip()
-    fillLinear(frontCard.bounds, stops: [
-        Stop(t: 0.0, color: c(255, 255, 255, 0.96)),
-        Stop(t: 1.0, color: c(226, 246, 255, 0.86))
-    ])
-    context.restoreGState()
-    c(255, 255, 255, 0.72).setStroke()
-    frontCard.lineWidth = s(2)
-    frontCard.stroke()
-
-    c(16, 103, 212, 0.26).setStroke()
-    for y in [592, 522, 452] as [CGFloat] {
-        let line = NSBezierPath()
-        line.lineCapStyle = .round
-        line.lineWidth = s(24)
-        line.move(to: CGPoint(x: s(330), y: s(y)))
-        line.line(to: CGPoint(x: s(644), y: s(y)))
-        line.stroke()
+    let symbolSize = CGFloat(size) * 0.42
+    let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .semibold, scale: .large)
+        .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
+    guard let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "CipherNotes")?.withSymbolConfiguration(symbolConfiguration) else {
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()!
     }
-
-    let lockBody = roundedRect(r(372, 286, 286, 238), radius: s(64))
-    drawShadow(lockBody, color: c(0, 48, 105, 0.20), blur: s(22), y: s(-7))
-    context.saveGState()
-    lockBody.addClip()
-    fillLinear(lockBody.bounds, stops: [
-        Stop(t: 0.0, color: c(0, 120, 212)),
-        Stop(t: 1.0, color: c(20, 181, 186))
-    ])
-    context.restoreGState()
-
-    let shackle = NSBezierPath()
-    shackle.lineWidth = s(52)
-    shackle.lineCapStyle = .round
-    shackle.appendArc(
-        withCenter: CGPoint(x: s(515), y: s(518)),
-        radius: s(105),
-        startAngle: 18,
-        endAngle: 162,
-        clockwise: false
+    symbol.isTemplate = true
+    NSColor.white.set()
+    let symbolSizeValue = symbol.size
+    let symbolRect = CGRect(
+        x: (CGFloat(size) - symbolSizeValue.width) / 2,
+        y: (CGFloat(size) - symbolSizeValue.height) / 2 + s(4),
+        width: symbolSizeValue.width,
+        height: symbolSizeValue.height
     )
-    c(7, 103, 194).setStroke()
-    shackle.stroke()
-
-    let key = NSBezierPath(ovalIn: r(488, 382, 54, 54))
-    c(255, 255, 255, 0.92).setFill()
-    key.fill()
-    let keyStem = roundedRect(r(503, 334, 24, 72), radius: s(12))
-    keyStem.fill()
-
-    c(255, 255, 255, 0.42).setFill()
-    roundedRect(r(254, 706, 310, 42), radius: s(21)).fill()
+    symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1)
 
     NSGraphicsContext.restoreGraphicsState()
     return context.makeImage()!
@@ -220,3 +165,5 @@ for (name, size) in slots {
 }
 
 try savePNG(drawIcon(size: 1024), to: assets.appendingPathComponent("AppIcon-1024.png"))
+try savePNG(drawIcon(size: 256), to: root.appendingPathComponent("Website/icon.png"))
+try savePNG(drawIcon(size: 256), to: root.appendingPathComponent("docs/icon.png"))
