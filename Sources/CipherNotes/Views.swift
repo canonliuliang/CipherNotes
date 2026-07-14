@@ -316,26 +316,20 @@ struct GlassPanel: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if #available(macOS 26.0, *) {
-            content
-                .padding(26)
-                .glassEffect(.regular, in: shape)
-        } else {
-            content
-                .padding(26)
-                .background(.regularMaterial, in: shape)
-                .overlay(alignment: .top) {
-                    shape
-                        .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.58), lineWidth: 1)
-                        .blendMode(.plusLighter)
-                }
-                .overlay {
-                    shape
-                        .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.07), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
-                .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
-        }
+        content
+            .padding(26)
+            .background(.regularMaterial, in: shape)
+            .overlay(alignment: .top) {
+                shape
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.58), lineWidth: 1)
+                    .blendMode(.plusLighter)
+            }
+            .overlay {
+                shape
+                    .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.07), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 28, y: 16)
+            .shadow(color: .white.opacity(colorScheme == .dark ? 0 : 0.55), radius: 1, y: -1)
     }
 }
 
@@ -345,27 +339,18 @@ struct NativeGlassSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
-        } else {
-            content
-                .background(.regularMaterial, in: shape)
-                .overlay {
-                    shape.stroke(.primary.opacity(colorScheme == .dark ? 0.16 : 0.10), lineWidth: 1)
-                }
-        }
+        content
+            .background(.regularMaterial, in: shape)
+            .overlay {
+                shape.stroke(.primary.opacity(colorScheme == .dark ? 0.16 : 0.10), lineWidth: 1)
+            }
     }
 }
 
 struct AppleProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        if #available(macOS 26.0, *) {
-            configuration.label
-                .buttonStyle(.glassProminent)
-        } else {
-            configuration.label
-                .buttonStyle(.borderedProminent)
-        }
+        configuration.label
+            .buttonStyle(.borderedProminent)
     }
 }
 
@@ -388,25 +373,12 @@ struct ClearButtonStyle: ButtonStyle {
             .frame(minHeight: 30)
             .opacity(configuration.isPressed ? 0.86 : 1)
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-        if #available(macOS 26.0, *) {
-            label
-                .glassEffect(.regular.tint(glassTint).interactive(), in: shape)
-        } else {
-            label
-                .background(backgroundColor(configuration.isPressed), in: shape)
-                .overlay {
-                    shape.stroke(borderColor, lineWidth: 1)
-                }
-                .contentShape(shape)
-        }
-    }
-
-    private var glassTint: Color? {
-        switch prominence {
-        case .standard: nil
-        case .primary: .accentColor.opacity(0.18)
-        case .danger: .red.opacity(0.12)
-        }
+        return label
+            .background(backgroundColor(configuration.isPressed), in: shape)
+            .overlay {
+                shape.stroke(borderColor, lineWidth: 1)
+            }
+            .contentShape(shape)
     }
 
     private var foregroundColor: Color {
