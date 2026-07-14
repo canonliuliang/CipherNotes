@@ -62,10 +62,8 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets
           source Packaging/release.env
-          cp "outputs/密笺-${CIPHERNOTES_VERSION}-普通版.pkg" "release-assets/CipherNotes-${CIPHERNOTES_VERSION}-普通版.pkg"
-          cp "outputs/密笺-${CIPHERNOTES_VERSION}-普通版.zip" "release-assets/CipherNotes-${CIPHERNOTES_VERSION}-普通版.zip"
-          cp "outputs/密笺-Developer-${CIPHERNOTES_VERSION}.pkg" "release-assets/CipherNotes-Developer-${CIPHERNOTES_VERSION}.pkg"
-          cp "outputs/密笺-Developer-${CIPHERNOTES_VERSION}.zip" "release-assets/CipherNotes-Developer-${CIPHERNOTES_VERSION}.zip"
+          cp "outputs/密笺-${CIPHERNOTES_VERSION}.pkg" "release-assets/CipherNotes-${CIPHERNOTES_VERSION}.pkg"
+          cp "outputs/密笺-${CIPHERNOTES_VERSION}.zip" "release-assets/CipherNotes-${CIPHERNOTES_VERSION}.zip"
           cp "outputs/发布说明.md" "release-assets/release-notes.md"
           cp "outputs/使用说明.md" "release-assets/user-guide.md"
           cp "outputs/产品介绍.html" "release-assets/product-page.html"
@@ -98,10 +96,8 @@ jobs:
               --latest
           fi
           gh release upload "${RELEASE_TAG}" \
-            release-assets/CipherNotes-${RELEASE_VERSION}-普通版.pkg \
-            release-assets/CipherNotes-${RELEASE_VERSION}-普通版.zip \
-            release-assets/CipherNotes-Developer-${RELEASE_VERSION}.pkg \
-            release-assets/CipherNotes-Developer-${RELEASE_VERSION}.zip \
+            release-assets/CipherNotes-${RELEASE_VERSION}.pkg \
+            release-assets/CipherNotes-${RELEASE_VERSION}.zip \
             release-assets/release-notes.md \
             release-assets/user-guide.md \
             release-assets/product-page.html \

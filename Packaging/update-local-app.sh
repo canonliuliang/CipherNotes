@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_SOURCE="/tmp/ciphernotes-appbuild/密笺.app"
 APP_DEST="/Applications/密笺.app"
 source "$ROOT_DIR/Packaging/release.env"
-PKG_PATH="$ROOT_DIR/outputs/密笺-${CIPHERNOTES_VERSION}-普通版.pkg"
+PKG_PATH="$ROOT_DIR/outputs/密笺-${CIPHERNOTES_VERSION}.pkg"
 
 cd "$ROOT_DIR"
 

@@ -213,17 +213,12 @@ struct RootView: View {
             .overlay(alignment: .top) { Divider().opacity(0.55) }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if store.isDeveloperDemoMode {
-                DeveloperDemoBanner()
-            }
         }
         .frame(minWidth: 860, minHeight: 620)
         .preferredColorScheme(appAppearance.colorScheme)
         .onAppear {
             DispatchQueue.main.async {
-                if !store.isDeveloperDemoMode {
-                    NSApplication.shared.windows.forEach { $0.sharingType = .none }
-                }
+                NSApplication.shared.windows.forEach { $0.sharingType = .none }
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -503,55 +498,6 @@ struct BrandHeader: View {
                 .foregroundStyle(.secondary)
             }
         }
-    }
-}
-
-struct DeveloperDemoBanner: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.octagon.fill")
-                .font(.title3.weight(.bold))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Developer 版 · 隔离演示环境")
-                    .font(.headline.weight(.bold))
-                Text("不会读取普通版数据；仅允许 Developer 账户，文件和更新操作只作用于当前演示副本。")
-                    .font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("v\(developerVersion) · build \(developerBuild) · 上次构建 \(developerBuildDate)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.red.opacity(0.82))
-            }
-            Spacer(minLength: 8)
-            Label("仅 Developer 账户", systemImage: "person.badge.key.fill")
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(.red)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.red.opacity(0.16))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.red.opacity(0.45))
-                .frame(height: 1)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.red.opacity(0.45))
-                .frame(height: 1)
-        }
-    }
-
-    private var developerVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版"
-    }
-
-    private var developerBuild: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
-    }
-
-    private var developerBuildDate: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildDate") as? String ?? "未记录"
     }
 }
 
@@ -2838,10 +2784,6 @@ struct SecurityCenterView: View {
                         securityMetric("保险柜", "\(store.vaultItems.count) 个文件", "lock.rectangle.stack.fill", .teal)
                     }
 
-                    if store.isDeveloperDemoMode {
-                        developerToolsCard
-                    }
-
                     VStack(alignment: .leading, spacing: 12) {
                         sectionTitle("保护状态", systemImage: "checkmark.shield.fill")
                         securityRow(
@@ -3076,52 +3018,6 @@ struct SecurityCenterView: View {
                 Label("复制数据位置", systemImage: "doc.on.doc")
             }
         }
-    }
-
-    private var developerToolsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Developer 工具", systemImage: "hammer.fill")
-            Text("仅 Developer 版可见。这里的诊断信息不包含笔记正文、文件内容、密码或恢复码。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
-                Button {
-                    copyDeveloperDiagnostics()
-                } label: {
-                    Label("复制诊断信息", systemImage: "doc.on.doc")
-                }
-                Button {
-                    store.clearSensitivePreviewCaches()
-                    store.errorMessage = "Developer 预览缓存已清理"
-                } label: {
-                    Label("清理预览缓存", systemImage: "trash.slash")
-                }
-                Button {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: NSTemporaryDirectory()))
-                } label: {
-                    Label("打开临时演示目录", systemImage: "folder")
-                }
-            }
-            .buttonStyle(ClearButtonStyle())
-        }
-        .securitySection()
-    }
-
-    private func copyDeveloperDiagnostics() {
-        let info = [
-            "CipherNotes Developer",
-            "Version: \(currentAppVersion)",
-            "Build: \(currentAppBuild)",
-            "Build date: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildDate") as? String ?? "-" )",
-            "Bundle: \(Bundle.main.bundleIdentifier ?? "-")",
-            "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
-            "Demo vault items: \(store.vaultItems.count)",
-            "Advanced protection: \(store.currentAccountAdvancedDataProtectionEnabled)"
-        ].joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(info, forType: .string)
-        store.errorMessage = "诊断信息已复制"
     }
 
     private var versionUpdateCard: some View {
@@ -3738,13 +3634,24 @@ struct ChangelogView: View {
             ]
         ),
         UpdateLogEntry(
+            id: "1.0.8",
+            version: "1.0.8",
+            title: "正式版收口与稳定性优化",
+            dateText: "2026-07-14",
+            items: [
+                "移除独立演示构建、演示保险库和演示发布链路，正式下载只保留一个 App 和一个安装包。",
+                "记事本与保险柜切换改为稳定的即时切换，避免页面标题、侧栏和工具栏闪现。",
+                "保险柜文件操作改用系统原生菜单，减少受保护文件操作入口的打开延迟。",
+                "筛选条、状态条和窗口内容继续固定关键高度，降低窄窗口下的布局跳动。",
+                "发布版本统一为 1.0.8，build 统一为 33，并在应用包中记录构建时间。"
+            ]
+        ),
+        UpdateLogEntry(
             id: "1.0.6",
             version: "1.0.6",
-            title: "开发者演示模式与安全日志收敛",
+            title: "安全日志与保护模式收敛",
             dateText: "2026-07-13",
             items: [
-                "新增 Developer 截图演示模式：使用独立临时保险库，只允许一个 Developer 账户，不能访问正式账户或正式数据。",
-                "开发者演示模式顶部显示橙色警告和 Developer 标识，明确说明这是隔离演示环境，不是隐藏后门。",
                 "安全日志最多保留最近 120 条，五秒内重复的同类事件自动合并，安全中心只展示最近 40 条筛选结果。",
                 "移除设备级生物识别解锁入口，登录只保留账户密码和恢复码，避免多人共用设备时产生误解。",
                 "虚假空间改为独立加密并可保存：虚假密码进入后可以新建笔记和移入保险柜文件，但不会读写真实空间。",

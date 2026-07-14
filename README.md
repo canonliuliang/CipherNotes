@@ -14,10 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.7` · macOS 原生界面与 Liquid Glass 收口.
-- `密笺-1.0.7-普通版.pkg`: recommended public installer.
-- `密笺-1.0.7-普通版.zip`: public portable archive.
-- `密笺-Developer-1.0.7.pkg`: isolated Developer build for screenshots and testing.
+- Current release: `1.0.8` · 正式版收口与稳定性优化.
+- `密笺-1.0.8.pkg`: recommended public installer.
+- `密笺-1.0.8.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -114,10 +113,8 @@ Packaging/build-release.sh
 
 The script runs tests, builds the release app, and updates:
 
-- `outputs/密笺-<version>-普通版.pkg`
-- `outputs/密笺-<version>-普通版.zip`
-- `outputs/密笺-Developer-<version>.pkg`
-- `outputs/密笺-Developer-<version>.zip`
+- `outputs/密笺-<version>.pkg`
+- `outputs/密笺-<version>.zip`
 - `outputs/使用说明.md`
 - `outputs/产品介绍.html`
 - `outputs/密笺图标.png`
@@ -136,23 +133,6 @@ This script runs the release build, updates `outputs`, closes the running app if
 
 This only updates your local Mac. Users still get updates from GitHub Releases.
 
-## Developer Screenshot Mode
-
-The normal app deliberately disables window capture. Developers can launch an isolated screenshot/demo session from Terminal:
-
-```sh
-/usr/bin/env CIPHERNOTES_ALLOW_CAPTURE=1 \
-/Applications/密笺.app/Contents/MacOS/CipherNotes
-```
-
-This build shows a persistent red `Developer Demo` warning, creates only one `Developer` account, uses a temporary demo vault with real previewable sample files, and never opens the normal local vault or other accounts. It is for screenshots and interface demonstrations only.
-
-When `/Applications/密笺.app` requires administrator authorization to replace, use the repository helper instead. It installs a user-owned copy and launches the current build without asking for an administrator password:
-
-```sh
-Packaging/launch-developer-demo.sh
-```
-
 ## Publish A Public Download
 
 Pushing source code to GitHub updates the repository and GitHub Pages, but it does not update what users download from the website by itself. The website download button points to GitHub Releases latest.
@@ -161,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.7
-git push origin v1.0.7
+git tag v1.0.8
+git push origin v1.0.8
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -195,6 +175,12 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 
 ## Changelog
 
+### 1.0.8 - 正式版收口与稳定性优化
+
+- Removed the separate demo build and demo-only release assets; the public download now contains one production app.
+- Stabilized Notes/Vault switching and replaced the file action popover with the native macOS menu.
+- Unified the public version metadata at `1.0.8 (33)`.
+
 ### 1.0.7 - macOS 原生界面与 Liquid Glass 收口
 
 - Reworked the main window around native macOS hierarchy: sidebar, toolbar, content, and floating surfaces.
@@ -202,10 +188,8 @@ Older vaults can be upgraded from the migration screen. Enter the old username a
 - Reduced custom gradients, saturated colors, hard borders, and heavy shadows in favor of system colors and native materials.
 - Improved dark-mode and accent-color behavior across buttons, status indicators, and selection surfaces.
 
-### 1.0.6 - 开发者演示模式与安全日志收敛
+### 1.0.6 - 安全日志与保护模式收敛
 
-- Added an isolated Developer screenshot/demo mode with a temporary vault and one Developer account.
-- Added a visible warning banner so capture mode is clearly separated from normal app use.
 - Reduced local security-log noise with a 120-entry retention limit, duplicate-event coalescing, and a 40-row UI window.
 
 ### 1.0.5 - 安全模型与虚假空间修复
