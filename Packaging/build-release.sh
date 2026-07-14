@@ -63,8 +63,7 @@ NORMAL_PKG="$OUTPUTS_DIR/密笺-${CIPHERNOTES_VERSION}.pkg"
 NORMAL_ZIP="$OUTPUTS_DIR/密笺-${CIPHERNOTES_VERSION}.zip"
 rm -f "$NORMAL_PKG" "$NORMAL_ZIP" \
     "$OUTPUTS_DIR/密笺安装器.pkg" "$OUTPUTS_DIR/密笺-macOS.zip" \
-    "$OUTPUTS_DIR"/密笺-*-普通版.pkg "$OUTPUTS_DIR"/密笺-*-普通版.zip \
-    "$OUTPUTS_DIR"/密笺-Developer-*.pkg "$OUTPUTS_DIR"/密笺-Developer-*.zip
+    "$OUTPUTS_DIR"/*.pkg "$OUTPUTS_DIR"/*.zip
 if productbuild --component "$APP_PATH" /Applications "$NORMAL_PKG" >"$PRODUCTBUILD_LOG" 2>&1; then
     grep -v '^write: Permission denied$' "$PRODUCTBUILD_LOG" || true
 else
