@@ -271,6 +271,14 @@ struct SecurityLogEntry: Identifiable, Codable, Equatable, Sendable {
     var message: String
 }
 
+struct EncryptedSecurityAuditPackage: Codable, Sendable {
+    let version: Int
+    let salt: Data
+    let rounds: UInt32
+    let encryptedLogs: Data
+    let createdAt: Date
+}
+
 enum AccountRole: String, Codable, CaseIterable, Identifiable, Equatable, Sendable {
     case admin
     case standard
@@ -306,6 +314,11 @@ struct SharedNotePackage: Codable, Equatable, Sendable {
     let rounds: UInt32
     let encryptedPayload: Data
     let createdAt: Date
+}
+
+struct PasswordKDFConfiguration: Codable, Equatable, Sendable {
+    var algorithm: String = "PBKDF2-HMAC-SHA256"
+    var rounds: UInt32
 }
 
 struct SharedAttachmentPayload: Codable, Equatable, Sendable {
@@ -365,6 +378,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
     var usernameSalt: Data? = nil
     var usernameHash: Data? = nil
     var passwordSalt: Data
+    var passwordKDF: PasswordKDFConfiguration? = nil
     var wrappedVaultKey: Data
     var recoverySalt: Data? = nil
     var recoveryWrappedVaultKey: Data? = nil
@@ -385,6 +399,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         case usernameSalt
         case usernameHash
         case passwordSalt
+        case passwordKDF
         case wrappedVaultKey
         case recoverySalt
         case recoveryWrappedVaultKey
@@ -406,6 +421,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         usernameSalt: Data? = nil,
         usernameHash: Data? = nil,
         passwordSalt: Data,
+        passwordKDF: PasswordKDFConfiguration? = nil,
         wrappedVaultKey: Data,
         recoverySalt: Data? = nil,
         recoveryWrappedVaultKey: Data? = nil,
@@ -425,6 +441,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         self.usernameSalt = usernameSalt
         self.usernameHash = usernameHash
         self.passwordSalt = passwordSalt
+        self.passwordKDF = passwordKDF
         self.wrappedVaultKey = wrappedVaultKey
         self.recoverySalt = recoverySalt
         self.recoveryWrappedVaultKey = recoveryWrappedVaultKey
@@ -447,6 +464,7 @@ struct UserRecord: Identifiable, Codable, Equatable, Sendable {
         usernameSalt = try container.decodeIfPresent(Data.self, forKey: .usernameSalt)
         usernameHash = try container.decodeIfPresent(Data.self, forKey: .usernameHash)
         passwordSalt = try container.decode(Data.self, forKey: .passwordSalt)
+        passwordKDF = try container.decodeIfPresent(PasswordKDFConfiguration.self, forKey: .passwordKDF)
         wrappedVaultKey = try container.decode(Data.self, forKey: .wrappedVaultKey)
         recoverySalt = try container.decodeIfPresent(Data.self, forKey: .recoverySalt)
         recoveryWrappedVaultKey = try container.decodeIfPresent(Data.self, forKey: .recoveryWrappedVaultKey)
@@ -478,6 +496,7 @@ enum VaultError: LocalizedError {
     case invalidPassword
     case invalidUsername
     case corruptVault
+    case fileTooLarge
     case passwordRequired
     case usernameInvalid
     case usernameTaken
@@ -492,6 +511,7 @@ enum VaultError: LocalizedError {
         case .invalidPassword: "密码不正确"
         case .invalidUsername: "用户名不正确"
         case .corruptVault: "保险库损坏或无法读取"
+        case .fileTooLarge: "文件过大，无法一次载入内存"
         case .passwordRequired: "需要填写这个字段"
         case .usernameInvalid: "用户名不可用"
         case .usernameTaken: "这个用户名已经注册"

@@ -1,10 +1,12 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 enum VaultImportJobStatus: String, Sendable {
     case encrypting
+    case paused
     case cancelling
     case finished
     case failed
@@ -13,6 +15,7 @@ enum VaultImportJobStatus: String, Sendable {
     var label: String {
         switch self {
         case .encrypting: "正在加密"
+        case .paused: "已暂停"
         case .cancelling: "正在取消"
         case .finished: "已完成"
         case .failed: "导入失败"
@@ -36,7 +39,7 @@ struct VaultImportJob: Identifiable, Equatable, Sendable {
     }
 
     var isActive: Bool {
-        status == .encrypting || status == .cancelling
+        status == .encrypting || status == .paused || status == .cancelling
     }
 
     var estimatedRemainingSeconds: TimeInterval? {
@@ -49,18 +52,41 @@ struct VaultImportJob: Identifiable, Equatable, Sendable {
 }
 
 private final class VaultImportCancellationToken: @unchecked Sendable {
-    private let lock = NSLock()
+    private let condition = NSCondition()
     private var cancelled = false
+    private var paused = false
 
     func cancel() {
-        lock.lock()
+        condition.lock()
         cancelled = true
-        lock.unlock()
+        paused = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func pause() {
+        condition.lock()
+        guard !cancelled else { condition.unlock(); return }
+        paused = true
+        condition.unlock()
+    }
+
+    func resume() {
+        condition.lock()
+        paused = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitIfPaused() {
+        condition.lock()
+        while paused && !cancelled { condition.wait() }
+        condition.unlock()
     }
 
     var isCancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         return cancelled
     }
 }
@@ -76,6 +102,7 @@ final class VaultStore: ObservableObject {
     @Published private(set) var securityLogs: [SecurityLogEntry] = []
     @Published private(set) var isDecoySession = false
     @Published private(set) var vaultImportJobs: [VaultImportJob] = []
+    @Published private(set) var vaultDeletingItemIDs: Set<UUID> = []
     @Published var recoveryCodeToShow: String?
     @Published var errorMessage: String?
     @Published var autoLockMinutes = 5
@@ -96,8 +123,17 @@ final class VaultStore: ObservableObject {
     private var authenticationFailureCounts: [String: Int] = [:]
     private var authenticationBlockedUntil: [String: Date] = [:]
     private var lastActivity = Date()
-    private var imagePreviewCache: [UUID: NSImage] = [:]
-    nonisolated private static let maxPreviewImageBytes = 12 * 1024 * 1024
+    private struct PreviewCacheEntry {
+        let image: NSImage
+        let cost: Int
+        var lastAccess: UInt64
+    }
+    private var imagePreviewCache: [UUID: PreviewCacheEntry] = [:]
+    private var previewCacheClock: UInt64 = 0
+    private var previewCacheCost = 0
+    nonisolated private static let maxPreviewSourceBytes = 64 * 1024 * 1024
+    nonisolated private static let maxPreviewCacheCost = 48 * 1024 * 1024
+    nonisolated private static let maxPreviewCacheItems = 32
     // Keep encryption of moderately sized files off the main actor. Tiny files
     // still use the synchronous path to avoid task setup overhead.
     nonisolated private static let backgroundImportThresholdBytes = 4 * 1024 * 1024
@@ -113,6 +149,13 @@ final class VaultStore: ObservableObject {
     private struct UserBuild {
         var user: UserRecord
         let recoveryCode: String
+    }
+
+    private struct BackupManifest: Codable {
+        let formatVersion: Int
+        let vaultVersion: Int
+        let createdAt: Date
+        let fileHashes: [String: String]
     }
 
     private static func placeholderAdminFields(rounds: UInt32 = CryptoService.defaultRounds) throws -> (salt: Data, verifier: Data) {
@@ -316,9 +359,10 @@ final class VaultStore: ObservableObject {
             _ = try decodeNotes(from: user.encryptedNotes, rawKey: rawKey)
 
             let passwordSalt = try CryptoService.randomData(count: 16)
-            let passwordKey = try CryptoService.deriveKey(password: newPassword, salt: passwordSalt, rounds: file.rounds)
+            let passwordKey = try CryptoService.deriveKey(password: newPassword, salt: passwordSalt, rounds: CryptoService.defaultRounds)
             let recovery = try makeRecoveryWrap(for: rawKey)
             file.users[index].passwordSalt = passwordSalt
+            file.users[index].passwordKDF = PasswordKDFConfiguration(rounds: CryptoService.defaultRounds)
             file.users[index].wrappedVaultKey = try CryptoService.seal(rawKey, using: passwordKey)
             file.users[index].recoverySalt = recovery.salt
             file.users[index].recoveryWrappedVaultKey = recovery.wrappedVaultKey
@@ -350,14 +394,15 @@ final class VaultStore: ObservableObject {
                 throw VaultError.invalidUsername
             }
             let user = file.users[index]
-            let oldPasswordKey = try CryptoService.deriveKey(password: currentPassword, salt: user.passwordSalt, rounds: file.rounds)
+            let oldPasswordKey = try CryptoService.deriveKey(password: currentPassword, salt: user.passwordSalt, rounds: passwordRounds(for: user, in: file))
             let rawKey = try CryptoService.open(user.wrappedVaultKey, using: oldPasswordKey)
             _ = try decodePayload(from: user.encryptedNotes, rawKey: rawKey)
 
             let newSalt = try CryptoService.randomData(count: 16)
-            let newPasswordKey = try CryptoService.deriveKey(password: newPassword, salt: newSalt, rounds: file.rounds)
+            let newPasswordKey = try CryptoService.deriveKey(password: newPassword, salt: newSalt, rounds: CryptoService.defaultRounds)
             let recovery = try makeRecoveryWrap(for: rawKey)
             file.users[index].passwordSalt = newSalt
+            file.users[index].passwordKDF = PasswordKDFConfiguration(rounds: CryptoService.defaultRounds)
             file.users[index].wrappedVaultKey = try CryptoService.seal(rawKey, using: newPasswordKey)
             file.users[index].recoverySalt = recovery.salt
             file.users[index].recoveryWrappedVaultKey = recovery.wrappedVaultKey
@@ -384,7 +429,7 @@ final class VaultStore: ObservableObject {
             guard let user = try findUser(username: username, in: file) else {
                 throw VaultError.invalidUsername
             }
-            let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
+            let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: passwordRounds(for: user, in: file))
             let rawKey = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
             try finishUnlock(file: file, user: user, rawKey: rawKey, username: user.displayName ?? CryptoService.normalizedUsername(username))
             clearAuthenticationFailures(for: identifier)
@@ -410,7 +455,7 @@ final class VaultStore: ObservableObject {
             guard let user = file.users.first(where: { $0.id == userID }) else {
                 throw VaultError.invalidUsername
             }
-            let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
+            let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: passwordRounds(for: user, in: file))
             let rawKey = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
             try finishUnlock(file: file, user: user, rawKey: rawKey, username: user.displayName ?? "本地账户")
             clearAuthenticationFailures(for: identifier)
@@ -495,7 +540,7 @@ final class VaultStore: ObservableObject {
                 throw VaultError.invalidUsername
             }
             let user = file.users[index]
-            let realKey = try CryptoService.deriveKey(password: decoyPassword, salt: user.passwordSalt, rounds: file.rounds)
+            let realKey = try CryptoService.deriveKey(password: decoyPassword, salt: user.passwordSalt, rounds: passwordRounds(for: user, in: file))
             if (try? CryptoService.open(user.wrappedVaultKey, using: realKey)) != nil {
                 errorMessage = "虚假密码不能和真实密码相同"
                 return
@@ -646,6 +691,30 @@ final class VaultStore: ObservableObject {
             errorMessage = "安全日志已清空"
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "清空安全日志失败"
+        }
+    }
+
+    func exportEncryptedSecurityAudit(to destinationURL: URL, currentPassword: String, confirmationText: String) {
+        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "导出安全日志" else {
+            errorMessage = "请输入“导出安全日志”以确认"
+            return
+        }
+        do {
+            let file = try readVaultFile()
+            try validateCurrentUserPassword(currentPassword, against: file)
+            let salt = try CryptoService.randomData(count: 16)
+            let key = try CryptoService.deriveKey(password: currentPassword, salt: salt, rounds: CryptoService.defaultRounds)
+            let package = EncryptedSecurityAuditPackage(
+                version: 1,
+                salt: salt,
+                rounds: CryptoService.defaultRounds,
+                encryptedLogs: try CryptoService.seal(try JSONEncoder().encode(securityLogs), using: key),
+                createdAt: .now
+            )
+            try JSONEncoder().encode(package).write(to: destinationURL, options: [.atomic])
+            errorMessage = "加密安全日志已导出"
+        } catch {
+            errorMessage = "导出安全日志失败：\(error.localizedDescription)"
         }
     }
 
@@ -895,6 +964,8 @@ final class VaultStore: ObservableObject {
                     let token = vaultImportCancellationTokens[job.id]
                     try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
                         token?.isCancelled == true
+                    }, waitIfPaused: {
+                        token?.waitIfPaused()
                     }) { processed in
                         Task { @MainActor in
                             self.updateVaultImportJob(id: job.id, processedByteCount: processed)
@@ -961,6 +1032,8 @@ final class VaultStore: ObservableObject {
                     }
                     try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
                         token?.isCancelled == true
+                    }, waitIfPaused: {
+                        token?.waitIfPaused()
                     }) { processed in
                         Task { @MainActor in
                             self.updateVaultImportJob(id: job.id, processedByteCount: processed)
@@ -1033,8 +1106,24 @@ final class VaultStore: ObservableObject {
     func cancelVaultImportJob(id: UUID) {
         vaultImportCancellationTokens[id]?.cancel()
         guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }),
-              vaultImportJobs[index].status == .encrypting else { return }
+              vaultImportJobs[index].status == .encrypting || vaultImportJobs[index].status == .paused else { return }
         vaultImportJobs[index].status = .cancelling
+        vaultImportJobs[index].updatedAt = .now
+    }
+
+    func pauseVaultImportJob(id: UUID) {
+        guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }),
+              vaultImportJobs[index].status == .encrypting else { return }
+        vaultImportCancellationTokens[id]?.pause()
+        vaultImportJobs[index].status = .paused
+        vaultImportJobs[index].updatedAt = .now
+    }
+
+    func resumeVaultImportJob(id: UUID) {
+        guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }),
+              vaultImportJobs[index].status == .paused else { return }
+        vaultImportCancellationTokens[id]?.resume()
+        vaultImportJobs[index].status = .encrypting
         vaultImportJobs[index].updatedAt = .now
     }
 
@@ -1106,7 +1195,7 @@ final class VaultStore: ObservableObject {
         guard vaultItems.contains(where: { $0.id == itemID }), let vaultKey, let currentUserID else { return nil }
         do {
             let data = try readAttachmentData(id: itemID, userID: currentUserID, rawKey: vaultKey)
-            imagePreviewCache.removeValue(forKey: itemID)
+            removePreviewCacheEntry(for: itemID)
             recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
             return data
         } catch {
@@ -1119,6 +1208,7 @@ final class VaultStore: ObservableObject {
     func clearSensitivePreviewCaches(recordEvent: Bool = false) {
         let hadPreviewCache = !imagePreviewCache.isEmpty
         imagePreviewCache.removeAll(keepingCapacity: false)
+        previewCacheCost = 0
         if recordEvent && hadPreviewCache {
             recordSecurityEvent(.protectedActionBlocked, message: "锁定时已清理保险柜预览缓存")
         }
@@ -1139,33 +1229,142 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    func previewVaultImage(itemID: UUID) -> NSImage? {
+    func makeVaultMediaResource(itemID: UUID) -> VaultMediaResource? {
+        guard let item = vaultItems.first(where: { $0.id == itemID }),
+              let vaultKey,
+              let currentUserID else { return nil }
+        do {
+            let reader = try EncryptedAttachmentReader(
+                url: attachmentURL(for: itemID, userID: currentUserID),
+                rawKey: vaultKey,
+                magic: Self.attachmentMagic,
+                maximumEncryptedChunkSize: Self.maxEncryptedAttachmentChunkSize,
+                encryptedChunkOverhead: Self.attachmentChunkOverhead
+            )
+            guard reader.byteCount == item.byteCount else { throw VaultError.corruptVault }
+            recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
+            return VaultMediaResource(
+                id: item.id,
+                fileName: item.fileName,
+                contentType: item.contentType,
+                byteCount: item.byteCount,
+                reader: reader
+            )
+        } catch {
+            errorMessage = "读取保险柜文件失败：\(error.localizedDescription)"
+            recordSecurityEvent(.vaultFileViewed, result: .failure, message: "保险柜文件内部查看失败")
+            return nil
+        }
+    }
+
+    func previewVaultImage(itemID: UUID) async -> NSImage? {
         guard !currentAccountAdvancedDataProtectionEnabled else { return nil }
-        if let cached = imagePreviewCache[itemID] { return cached }
+        if var cached = imagePreviewCache[itemID] {
+            previewCacheClock &+= 1
+            cached.lastAccess = previewCacheClock
+            imagePreviewCache[itemID] = cached
+            return cached.image
+        }
         guard let item = vaultItems.first(where: { $0.id == itemID }),
               item.contentType?.hasPrefix("image/") == true,
-              item.byteCount <= Self.maxPreviewImageBytes else { return nil }
-        guard let data = vaultItemData(itemID: itemID) else { return nil }
-        let image = NSImage(data: data)
-        if let image { imagePreviewCache[itemID] = image }
+              item.byteCount <= Self.maxPreviewSourceBytes,
+              let vaultKey,
+              let currentUserID else { return nil }
+        let url = attachmentURL(for: itemID, userID: currentUserID)
+        let image = await Task.detached(priority: .utility) {
+            do {
+                let reader = try EncryptedAttachmentReader(
+                    url: url,
+                    rawKey: vaultKey,
+                    magic: Self.attachmentMagic,
+                    maximumEncryptedChunkSize: Self.maxEncryptedAttachmentChunkSize,
+                    encryptedChunkOverhead: Self.attachmentChunkOverhead
+                )
+                let data = try reader.readAll(maximumBytes: Self.maxPreviewSourceBytes)
+                return Self.downsampledImage(data: data, maximumPixelSize: 560)
+            } catch {
+                return nil
+            }
+        }.value
+        if let image { insertPreviewImage(image, for: itemID) }
         return image
     }
 
+    nonisolated private static func downsampledImage(data: Data, maximumPixelSize: Int) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
+    private func insertPreviewImage(_ image: NSImage, for itemID: UUID) {
+        previewCacheCost = imagePreviewCache.values.reduce(0) { $0 + $1.cost }
+        removePreviewCacheEntry(for: itemID)
+        previewCacheClock &+= 1
+        let pixels = image.representations.first.map { max(1, $0.pixelsWide) * max(1, $0.pixelsHigh) } ?? 1
+        let entry = PreviewCacheEntry(image: image, cost: pixels * 4, lastAccess: previewCacheClock)
+        imagePreviewCache[itemID] = entry
+        previewCacheCost += entry.cost
+        while imagePreviewCache.count > Self.maxPreviewCacheItems || previewCacheCost > Self.maxPreviewCacheCost {
+            guard let oldest = imagePreviewCache.min(by: { $0.value.lastAccess < $1.value.lastAccess }) else { break }
+            removePreviewCacheEntry(for: oldest.key)
+        }
+    }
+
+    private func removePreviewCacheEntry(for itemID: UUID) {
+        if let removed = imagePreviewCache.removeValue(forKey: itemID) {
+            previewCacheCost = max(0, previewCacheCost - removed.cost)
+        }
+    }
+
     func deleteVaultItem(itemID: UUID) {
-        guard let currentUserID else { return }
-        guard vaultItems.contains(where: { $0.id == itemID }) else { return }
-        do {
-            try removeAttachmentBlob(id: itemID, userID: currentUserID)
-        } catch {
-            errorMessage = "删除保险柜文件失败：\(error.localizedDescription)"
+        guard let currentUserID,
+              let item = vaultItems.first(where: { $0.id == itemID }),
+              !vaultDeletingItemIDs.contains(itemID) else { return }
+        let url = attachmentURL(for: itemID, userID: currentUserID)
+        if item.byteCount < Self.backgroundImportThresholdBytes {
+            do {
+                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+                vaultItems.removeAll { $0.id == itemID }
+                removePreviewCacheEntry(for: itemID)
+                persist()
+                touchActivity()
+                errorMessage = "文件已从保险柜删除"
+                recordSecurityEvent(.vaultFileDeleted, message: "已删除 1 个保险柜文件")
+            } catch {
+                errorMessage = "删除保险柜文件失败：\(error.localizedDescription)"
+            }
             return
         }
-        vaultItems.removeAll { $0.id == itemID }
-        imagePreviewCache.removeValue(forKey: itemID)
-        persist()
-        touchActivity()
-        errorMessage = "文件已从保险柜删除"
-        recordSecurityEvent(.vaultFileDeleted, message: "已删除 1 个保险柜文件")
+        vaultDeletingItemIDs.insert(itemID)
+        Task.detached(priority: .utility) {
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+                await MainActor.run {
+                    guard self.currentUserID == currentUserID else { return }
+                    self.vaultItems.removeAll { $0.id == itemID }
+                    self.removePreviewCacheEntry(for: itemID)
+                    self.vaultDeletingItemIDs.remove(itemID)
+                    self.persist()
+                    self.touchActivity()
+                    self.errorMessage = "文件已从保险柜删除"
+                    self.recordSecurityEvent(.vaultFileDeleted, message: "已删除 1 个保险柜文件")
+                }
+            } catch {
+                await MainActor.run {
+                    self.vaultDeletingItemIDs.remove(itemID)
+                    self.errorMessage = "删除保险柜文件失败：\(error.localizedDescription)"
+                    self.recordSecurityEvent(.vaultFileDeleted, result: .failure, message: "保险柜文件删除失败")
+                }
+            }
+        }
     }
 
     func deleteNotes(at offsets: IndexSet) {
@@ -1326,6 +1525,7 @@ final class VaultStore: ObservableObject {
         byteCount: Int,
         vaultURL: URL,
         shouldCancel: @Sendable () -> Bool = { false },
+        waitIfPaused: @Sendable () -> Void = {},
         progress: @Sendable (Int) -> Void = { _ in }
     ) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID, vaultURL: vaultURL), withIntermediateDirectories: true)
@@ -1341,6 +1541,7 @@ final class VaultStore: ObservableObject {
         try writeAttachmentHeader(to: output, byteCount: byteCount)
         var processedByteCount = 0
         while true {
+            waitIfPaused()
             if shouldCancel() {
                 try? output.close()
                 try? input.close()
@@ -1537,6 +1738,7 @@ final class VaultStore: ObservableObject {
             usernameSalt: usernameSalt,
             usernameHash: CryptoService.usernameHash(username, salt: usernameSalt),
             passwordSalt: passwordSalt,
+            passwordKDF: PasswordKDFConfiguration(rounds: CryptoService.defaultRounds),
             wrappedVaultKey: try CryptoService.seal(rawKey, using: passwordKey),
             recoverySalt: recovery.salt,
             recoveryWrappedVaultKey: recovery.wrappedVaultKey,
@@ -1765,8 +1967,15 @@ final class VaultStore: ObservableObject {
               let user = file.users.first(where: { $0.id == currentUserID }) else {
             throw VaultError.invalidUsername
         }
-        let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
+        let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: passwordRounds(for: user, in: file))
         _ = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
+    }
+
+    private func passwordRounds(for user: UserRecord, in file: VaultFile) -> UInt32 {
+        guard let configuration = user.passwordKDF,
+              configuration.algorithm == "PBKDF2-HMAC-SHA256",
+              configuration.rounds >= 100_000 else { return file.rounds }
+        return configuration.rounds
     }
 
     private static func adminVerifier(for key: SymmetricKey) -> Data {
@@ -1804,10 +2013,13 @@ final class VaultStore: ObservableObject {
             let file = try JSONDecoder().decode(VaultFile.self, from: Data(contentsOf: vaultURL))
             guard file.version == Self.vaultVersion else { throw VaultError.corruptVault }
             return file
-        } catch let error as VaultError {
-            throw error
         } catch {
-            throw VaultError.corruptVault
+            let recoveryURL = vaultRecoveryURL()
+            guard let data = try? Data(contentsOf: recoveryURL),
+                  let recovered = try? JSONDecoder().decode(VaultFile.self, from: data),
+                  recovered.version == Self.vaultVersion else { throw VaultError.corruptVault }
+            try? data.write(to: vaultURL, options: [.atomic])
+            return recovered
         }
     }
 
@@ -1826,7 +2038,16 @@ final class VaultStore: ObservableObject {
     private func write(_ file: VaultFile) throws {
         try FileManager.default.createDirectory(at: vaultURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(file)
+        if FileManager.default.fileExists(atPath: vaultURL.path),
+           let existing = try? Data(contentsOf: vaultURL),
+           (try? JSONDecoder().decode(VaultFile.self, from: existing)) != nil {
+            try existing.write(to: vaultRecoveryURL(), options: [.atomic])
+        }
         try data.write(to: vaultURL, options: [.atomic])
+    }
+
+    private func vaultRecoveryURL() -> URL {
+        vaultURL.deletingPathExtension().appendingPathExtension("previous.json")
     }
 
     private func refreshAccounts(from file: VaultFile) {
@@ -1971,6 +2192,17 @@ final class VaultStore: ObservableObject {
             if FileManager.default.fileExists(atPath: attachmentsRoot.path) {
                 try FileManager.default.copyItem(at: attachmentsRoot, to: backupDir.appendingPathComponent("Attachments", isDirectory: true))
             }
+            let hashes = try Self.backupFileHashes(in: backupDir)
+            let manifest = BackupManifest(
+                formatVersion: 1,
+                vaultVersion: Self.vaultVersion,
+                createdAt: .now,
+                fileHashes: hashes
+            )
+            try JSONEncoder().encode(manifest).write(
+                to: backupDir.appendingPathComponent("manifest.json"),
+                options: [.atomic]
+            )
         } catch {
             errorMessage = "备份失败：\(error.localizedDescription)"
             recordSecurityEvent(.backupCreated, result: .failure, message: "保险库备份失败")
@@ -1997,9 +2229,22 @@ final class VaultStore: ObservableObject {
             return
         }
         guard let data = try? Data(contentsOf: backupVaultURL),
-              (try? JSONDecoder().decode(VaultFile.self, from: data)) != nil else {
+              let decodedBackup = try? JSONDecoder().decode(VaultFile.self, from: data),
+              decodedBackup.version == Self.vaultVersion else {
             errorMessage = "备份文件无效或已损坏"
             return
+        }
+        let manifestURL = backupURL.appendingPathComponent("manifest.json")
+        if FileManager.default.fileExists(atPath: manifestURL.path) {
+            guard let manifestData = try? Data(contentsOf: manifestURL),
+                  let manifest = try? JSONDecoder().decode(BackupManifest.self, from: manifestData),
+                  manifest.formatVersion == 1,
+                  manifest.vaultVersion == Self.vaultVersion,
+                  (try? Self.validateBackupHashes(manifest.fileHashes, in: backupURL)) == true else {
+                errorMessage = "备份完整性校验失败，未更改当前保险库"
+                recordSecurityEvent(.backupRestored, result: .failure, message: "备份完整性校验失败")
+                return
+            }
         }
         do {
             try validateCurrentUserPassword(currentPassword, against: try readVaultFile())
@@ -2042,5 +2287,46 @@ final class VaultStore: ObservableObject {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         return formatter
+    }
+
+    nonisolated private static func backupFileHashes(in directory: URL) throws -> [String: String] {
+        let keys: [URLResourceKey] = [.isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else {
+            throw VaultError.corruptVault
+        }
+        var hashes: [String: String] = [:]
+        for case let fileURL as URL in enumerator {
+            guard (try fileURL.resourceValues(forKeys: Set(keys))).isRegularFile == true,
+                  fileURL.lastPathComponent != "manifest.json" else { continue }
+            let basePath = directory.standardizedFileURL.path
+            let prefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
+            let filePath = fileURL.standardizedFileURL.path
+            guard filePath.hasPrefix(prefix) else { throw VaultError.corruptVault }
+            let relative = String(filePath.dropFirst(prefix.count))
+            hashes[relative] = try sha256Hex(of: fileURL)
+        }
+        return hashes
+    }
+
+    nonisolated private static func validateBackupHashes(_ expected: [String: String], in directory: URL) throws -> Bool {
+        guard !expected.isEmpty else { return false }
+        for (relative, hash) in expected {
+            let fileURL = directory.appendingPathComponent(relative)
+            guard FileManager.default.fileExists(atPath: fileURL.path),
+                  try sha256Hex(of: fileURL) == hash else { return false }
+        }
+        return true
+    }
+
+    nonisolated private static func sha256Hex(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let data = try handle.read(upToCount: 4 * 1024 * 1024) ?? Data()
+            if data.isEmpty { break }
+            hasher.update(data: data)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

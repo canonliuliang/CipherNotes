@@ -11,6 +11,8 @@ let package = Package(
         .executableTarget(
             name: "CipherNotes",
             linkerSettings: [
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("AVKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("PDFKit")
             ]

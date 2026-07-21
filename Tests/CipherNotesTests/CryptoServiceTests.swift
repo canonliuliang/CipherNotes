@@ -1,8 +1,37 @@
 import CryptoKit
+import AppKit
+import SwiftUI
 import XCTest
 @testable import CipherNotes
 
 final class CryptoServiceTests: XCTestCase {
+    @MainActor
+    func testMinimumWindowRendersInLightAndDarkAppearances() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        for scheme in [ColorScheme.light, .dark] {
+            for tint in [Color.blue, .mint] {
+                let root = RootView()
+                    .environmentObject(store)
+                    .environment(\.colorScheme, scheme)
+                    .tint(tint)
+                let view = NSHostingView(rootView: root)
+                view.frame = NSRect(x: 0, y: 0, width: 860, height: 620)
+                view.layoutSubtreeIfNeeded()
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                    return XCTFail("无法渲染最小窗口")
+                }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                XCTAssertEqual(view.bounds.width, 860)
+                XCTAssertEqual(view.bounds.height, 620)
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, 860)
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, 620)
+                XCTAssertNotNil(bitmap.representation(using: .png, properties: [:]))
+            }
+        }
+    }
+
     func testEncryptionRoundTrip() throws {
         let key = SymmetricKey(data: try CryptoService.randomData(count: 32))
         let plaintext = Data("绝密内容".utf8)
@@ -16,6 +45,41 @@ final class CryptoServiceTests: XCTestCase {
         let second = SymmetricKey(data: try CryptoService.randomData(count: 32))
         let ciphertext = try CryptoService.seal(Data("secret".utf8), using: first)
         XCTAssertThrowsError(try CryptoService.open(ciphertext, using: second))
+    }
+
+    @MainActor
+    func testBackupIncludesIntegrityManifest() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let backupRoot = directory.appendingPathComponent("Backups")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "backup", password: "pass", confirmation: "pass")
+        _ = store.addNote()
+        store.backupVault(to: backupRoot)
+        let backup = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: backupRoot, includingPropertiesForKeys: nil).first)
+        let manifestURL = backup.appendingPathComponent("manifest.json")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
+        let hashes = try XCTUnwrap(object["fileHashes"] as? [String: String])
+        XCTAssertNotNil(hashes["vault.json"], "manifest keys: \(hashes.keys.sorted())")
+    }
+
+    @MainActor
+    func testSecurityAuditExportIsEncrypted() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let output = directory.appendingPathComponent("audit.cnaudit")
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "audit", password: "pass", confirmation: "pass")
+        store.recordSecurityEvent(.vaultFileViewed, message: "已查看保险柜文件")
+        store.exportEncryptedSecurityAudit(to: output, currentPassword: "pass", confirmationText: "导出安全日志")
+        let diskData = try Data(contentsOf: output)
+        XCTAssertFalse(String(decoding: diskData, as: UTF8.self).contains("已查看保险柜文件"))
+        let package = try JSONDecoder().decode(EncryptedSecurityAuditPackage.self, from: diskData)
+        let key = try CryptoService.deriveKey(password: "pass", salt: package.salt, rounds: package.rounds)
+        let logs = try JSONDecoder().decode([SecurityLogEntry].self, from: CryptoService.open(package.encryptedLogs, using: key))
+        XCTAssertTrue(logs.contains { $0.eventType == .vaultFileViewed })
     }
 
     func testPasswordDerivationIsStable() throws {
@@ -325,7 +389,12 @@ final class CryptoServiceTests: XCTestCase {
 
         let sourceURL = directory.appendingPathComponent("large-photo.raw")
         let exportedURL = directory.appendingPathComponent("large-photo-exported.raw")
-        let payload = Data((0..<(5 * 1024 * 1024 + 123)).map { UInt8($0 % 251) })
+        let payloadCount = 5 * 1024 * 1024 + 123
+        var payload = Data(count: payloadCount)
+        payload.withUnsafeMutableBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            for index in bytes.indices { bytes[index] = UInt8(index % 251) }
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try payload.write(to: sourceURL)
 
@@ -343,6 +412,11 @@ final class CryptoServiceTests: XCTestCase {
         }
         XCTAssertEqual(item.byteCount, payload.count)
         XCTAssertEqual(store.vaultItemData(itemID: item.id), payload)
+        guard let media = store.makeVaultMediaResource(itemID: item.id) else {
+            return XCTFail("应该能建立加密媒体读取器")
+        }
+        let crossingRange = (4 * 1024 * 1024 - 37)..<(4 * 1024 * 1024 + 71)
+        XCTAssertEqual(try media.reader.read(range: crossingRange), payload.subdata(in: crossingRange))
 
         let attachmentRoot = directory.appendingPathComponent("Attachments")
         let encryptedFiles = (FileManager.default.enumerator(at: attachmentRoot, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])

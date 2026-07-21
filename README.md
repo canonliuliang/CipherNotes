@@ -14,9 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.9` · 安全加固与性能优化.
-- `密笺-1.0.9.pkg`: recommended public installer.
-- `密笺-1.0.9.zip`: public portable archive.
+- Current release: `1.1.0` · 内置媒体与大文件体验.
+- `密笺-1.1.0.pkg`: recommended public installer.
+- `密笺-1.1.0.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -141,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.9
-git push origin v1.0.9
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +174,14 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.1.0 - 内置媒体与大文件体验
+
+- Rebuilt the vault viewer around native in-app image, PDF, text, audio, and video surfaces.
+- Streams audio and video from encrypted 4 MB chunks without plaintext temporary files or external apps.
+- Added background image downsampling, bounded LRU thumbnail caching, import pause/resume, and background deletion for large files.
+- Added debounced indexed note search, versioned per-account KDF metadata, vault recovery copies, backup SHA-256 manifests, and encrypted security-audit export.
+- Added automated 860x620 light/dark/accent rendering checks and upgraded GitHub Actions away from Node.js 20 actions.
 
 ### 1.0.9 - 安全加固与性能优化
 

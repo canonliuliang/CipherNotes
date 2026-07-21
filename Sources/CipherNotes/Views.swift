@@ -1,4 +1,6 @@
 import AppKit
+import AVKit
+import ImageIO
 import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -934,7 +936,7 @@ struct NotesView: View {
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
     @AppStorage("reduceMotion") private var reduceMotion = false
     @State private var selection: UUID?
-    @State private var query = ""
+    @StateObject private var searchIndex = NoteSearchIndex()
     @State private var showingExportShare = false
     @State private var showingImportShare = false
     @State private var sharePassword = ""
@@ -956,14 +958,10 @@ struct NotesView: View {
         }
 
         let notes: [Note]
-        if query.isEmpty {
+        if searchIndex.effectiveQuery.isEmpty {
             notes = baseNotes
         } else {
-            notes = baseNotes.filter { note in
-                note.title.localizedCaseInsensitiveContains(query)
-                || note.body.localizedCaseInsensitiveContains(query)
-                || note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
-            }
+            notes = baseNotes.filter(searchIndex.matches)
         }
         switch NoteSort(rawValue: noteSortRawValue) ?? .updatedNewest {
         case .updatedNewest:
@@ -986,6 +984,7 @@ struct NotesView: View {
             }
         }
     }
+
 
     private var activeNotesCount: Int { store.notes.filter { !$0.isArchived }.count }
     private var archivedNotesCount: Int { store.notes.filter(\.isArchived).count }
@@ -1170,7 +1169,7 @@ struct NotesView: View {
                         .padding()
                     }
                 }
-                .searchable(text: $query, prompt: "搜索已解锁的笔记")
+                .searchable(text: $searchIndex.query, prompt: "搜索已解锁的笔记")
                 HStack {
                     Button { selection = store.addNote() } label: { Label("新笔记", systemImage: "square.and.pencil") }
                     Spacer()
@@ -1251,13 +1250,13 @@ struct NotesView: View {
     }
 
     private var emptyNotesTitle: String {
-        if !query.isEmpty { return "没有匹配的笔记" }
+        if !searchIndex.query.isEmpty { return "没有匹配的笔记" }
         if (NoteFilter(rawValue: noteFilterRawValue) ?? .active) == .archived { return "归档是空的" }
         return "还没有笔记"
     }
 
     private var emptyNotesDescription: String {
-        if !query.isEmpty { return "换个关键词，或直接创建一条新的加密笔记。" }
+        if !searchIndex.query.isEmpty { return "换个关键词，或直接创建一条新的加密笔记。" }
         return "新建后会自动保存在当前本地账户的加密保险库里。"
     }
 
@@ -2089,6 +2088,19 @@ struct VaultView: View {
                         }
                         Spacer()
                         if job.status == .encrypting {
+                            Button("暂停") {
+                                store.pauseVaultImportJob(id: job.id)
+                            }
+                            .buttonStyle(ClearButtonStyle())
+                            Button("取消") {
+                                store.cancelVaultImportJob(id: job.id)
+                            }
+                            .buttonStyle(ClearButtonStyle())
+                        } else if job.status == .paused {
+                            Button("继续") {
+                                store.resumeVaultImportJob(id: job.id)
+                            }
+                            .buttonStyle(ClearButtonStyle())
                             Button("取消") {
                                 store.cancelVaultImportJob(id: job.id)
                             }
@@ -2109,6 +2121,7 @@ struct VaultView: View {
     private func vaultImportIcon(for job: VaultImportJob) -> String {
         switch job.status {
         case .encrypting: "lock.rotation"
+        case .paused: "pause.circle.fill"
         case .cancelling: "xmark.circle"
         case .finished: "checkmark.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
@@ -2119,6 +2132,7 @@ struct VaultView: View {
     private func vaultImportTint(for job: VaultImportJob) -> Color {
         switch job.status {
         case .encrypting: .mint
+        case .paused: .orange
         case .cancelling, .cancelled: .secondary
         case .finished: .green
         case .failed: .orange
@@ -2154,6 +2168,7 @@ struct VaultItemCard: View {
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
+        let isDeleting = store.vaultDeletingItemIDs.contains(item.id)
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -2177,6 +2192,15 @@ struct VaultItemCard: View {
                     Image(systemName: systemImage)
                         .font(.system(size: 34))
                         .foregroundStyle(.secondary)
+                }
+                if isDeleting {
+                    ZStack {
+                        Color.black.opacity(0.28)
+                        ProgressView("正在删除")
+                            .tint(.white)
+                            .foregroundStyle(.white)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
             .aspectRatio(1.55, contentMode: .fit)
@@ -2230,14 +2254,18 @@ struct VaultItemCard: View {
                 }
                 .menuStyle(.borderlessButton)
                 .help("更多文件操作")
+                .disabled(isDeleting)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nativeGlassSurface(radius: 18)
+        .allowsHitTesting(!isDeleting)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(protected ? "受保护的保险柜文件" : "保险柜文件：\(item.fileName)")
         .task(id: item.id) {
             if isImage && !store.currentAccountAdvancedDataProtectionEnabled {
-                preview = store.previewVaultImage(itemID: item.id)
+                preview = await store.previewVaultImage(itemID: item.id)
             } else {
                 preview = nil
             }
@@ -2283,33 +2311,25 @@ struct VaultItemCard: View {
             store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
             return
         }
-        if isVideo {
-            store.errorMessage = "视频内置查看器正在完善，当前版本不会交给外部 App 打开"
-            return
-        }
-        if isText && item.byteCount > 5 * 1024 * 1024 {
-            store.errorMessage = "文本文件超过 5MB，暂不在内置查看器中打开"
-            return
-        }
-        if isAudio && item.byteCount > 50 * 1024 * 1024 {
-            store.errorMessage = "音频文件超过 50MB，暂不在内置播放器中打开"
-            return
-        }
-        guard let data = store.internalVaultPreviewData(itemID: item.id) else { return }
-        if isImage, let image = NSImage(data: data) {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .image(image))
+        guard let resource = store.makeVaultMediaResource(itemID: item.id) else { return }
+        if isImage {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .image(resource))
             return
         }
         if isPDF {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .pdf(data))
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .pdf(resource))
             return
         }
-        if isText, let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .text(text))
+        if isText {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .text(resource))
             return
         }
         if isAudio {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .audio(data))
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .audio(resource))
+            return
+        }
+        if isVideo {
+            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .video(resource))
             return
         }
         store.errorMessage = "这个文件无法在内置查看器中打开"
@@ -2340,10 +2360,11 @@ private struct VaultPreviewPayload: Identifiable {
 }
 
 private enum VaultPreviewKind {
-    case image(NSImage)
-    case text(String)
-    case pdf(Data)
-    case audio(Data)
+    case image(VaultMediaResource)
+    case text(VaultMediaResource)
+    case pdf(VaultMediaResource)
+    case audio(VaultMediaResource)
+    case video(VaultMediaResource)
 }
 
 private struct VaultInternalPreviewView: View {
@@ -2395,33 +2416,16 @@ private struct VaultInternalPreviewView: View {
     @ViewBuilder
     private var content: some View {
         switch payload.kind {
-        case .image(let image):
-            GeometryReader { proxy in
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: max(proxy.size.width - 24, 1), height: max(proxy.size.height - 24, 1))
-                        .padding(12)
-                }
-            }
-            .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .text(let text):
-            ScrollView {
-                Text(text)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-            }
-            .scrollIndicators(.automatic)
-            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .pdf(let data):
-            VaultPDFPreview(data: data)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .audio(let data):
-            VaultAudioPreview(data: data)
+        case .image(let resource):
+            VaultImagePreview(resource: resource)
+        case .text(let resource):
+            VaultTextPreview(resource: resource)
+        case .pdf(let resource):
+            VaultPDFResourcePreview(resource: resource)
+        case .audio(let resource):
+            VaultAudioPreview(resource: resource)
+        case .video(let resource):
+            VaultVideoPreview(resource: resource)
         }
     }
 
@@ -2431,15 +2435,16 @@ private struct VaultInternalPreviewView: View {
         case .text: "doc.text"
         case .pdf: "doc.richtext"
         case .audio: "waveform"
+        case .video: "play.rectangle"
         }
     }
 }
 
 private struct VaultAudioPreview: View {
-    @StateObject private var player: InMemoryAudioPlayer
+    @StateObject private var player: VaultMediaPlayer
 
-    init(data: Data) {
-        _player = StateObject(wrappedValue: InMemoryAudioPlayer(data: data))
+    init(resource: VaultMediaResource) {
+        _player = StateObject(wrappedValue: VaultMediaPlayer(resource: resource))
     }
 
     var body: some View {
@@ -2456,6 +2461,8 @@ private struct VaultAudioPreview: View {
                     ),
                     in: 0...max(player.duration, 1)
                 )
+                .accessibilityLabel("播放位置")
+                .accessibilityValue("\(player.currentTime.formattedPlaybackTime)，共 \(player.duration.formattedPlaybackTime)")
                 HStack {
                     Text(player.currentTime.formattedPlaybackTime)
                     Spacer()
@@ -2465,12 +2472,12 @@ private struct VaultAudioPreview: View {
                 .foregroundStyle(.secondary)
             }
             Button {
-                player.toggle()
+                player.togglePlayback()
             } label: {
                 Label(player.isPlaying ? "暂停" : "播放", systemImage: player.isPlaying ? "pause.fill" : "play.fill")
             }
             .buttonStyle(ClearButtonStyle(prominence: .primary))
-            Text("音频由内存数据直接播放，不写入临时文件，不调用外部播放器。")
+            Text("按需解密播放，不写入明文临时文件，也不调用外部播放器。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -2481,65 +2488,175 @@ private struct VaultAudioPreview: View {
     }
 }
 
-@MainActor
-private final class InMemoryAudioPlayer: ObservableObject {
-    @Published var isPlaying = false
-    @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
+private struct VaultVideoPreview: View {
+    @StateObject private var media: VaultMediaPlayer
 
-    private var sound: NSSound?
-    private var timer: Timer?
-
-    init(data: Data) {
-        let sound = NSSound(data: data)
-        self.sound = sound
-        duration = sound?.duration ?? 0
+    init(resource: VaultMediaResource) {
+        _media = StateObject(wrappedValue: VaultMediaPlayer(resource: resource))
     }
 
-    func toggle() {
-        guard let sound else { return }
-        if isPlaying {
-            sound.pause()
-            isPlaying = false
-            stopTimer()
-        } else {
-            sound.play()
-            isPlaying = true
-            startTimer()
+    var body: some View {
+        VStack(spacing: 10) {
+            VideoPlayer(player: media.player)
+                .background(.black)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            if let errorText = media.errorText {
+                Label(errorText, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("视频按需解密播放，不写入明文临时文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .onDisappear { media.stopAndClear() }
     }
+}
 
-    func seek(to time: TimeInterval) {
-        sound?.currentTime = min(max(time, 0), duration)
-        currentTime = sound?.currentTime ?? 0
-    }
+private struct VaultImagePreview: View {
+    let resource: VaultMediaResource
+    @State private var image: NSImage?
+    @State private var errorText: String?
+    @State private var zoom = 1.0
 
-    func stopAndClear() {
-        sound?.stop()
-        sound = nil
-        isPlaying = false
-        stopTimer()
-        currentTime = 0
-        duration = 0
-    }
-
-    private func startTimer() {
-        stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let sound = self.sound else { return }
-                self.currentTime = sound.currentTime
-                if !sound.isPlaying && self.isPlaying {
-                    self.isPlaying = false
-                    self.stopTimer()
+    var body: some View {
+        VStack(spacing: 8) {
+            GeometryReader { proxy in
+                ScrollView([.horizontal, .vertical]) {
+                    Group {
+                        if let image {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(
+                                    width: max(1, proxy.size.width * zoom),
+                                    height: max(1, proxy.size.height * zoom)
+                                )
+                        } else if let errorText {
+                            ContentUnavailableView("无法显示图片", systemImage: "photo.badge.exclamationmark", description: Text(errorText))
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        } else {
+                            ProgressView("正在安全解密图片")
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+                    }
                 }
+            }
+            HStack(spacing: 10) {
+                Button { zoom = max(0.5, zoom - 0.25) } label: { Image(systemName: "minus.magnifyingglass") }
+                    .accessibilityLabel("缩小")
+                Slider(value: $zoom, in: 0.5...3, step: 0.25)
+                    .frame(maxWidth: 180)
+                Button { zoom = min(3, zoom + 0.25) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .accessibilityLabel("放大")
+                Button("适合窗口") { zoom = 1 }
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+        }
+        .task(id: resource.id) {
+            let reader = resource.reader
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<NSImage, Error> in
+                do {
+                    let data = try reader.readAll(maximumBytes: 256 * 1024 * 1024)
+                    guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+                        throw VaultError.corruptVault
+                    }
+                    let options: [CFString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 4096,
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                        throw VaultError.corruptVault
+                    }
+                    return .success(NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height)))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            switch result {
+            case .success(let image): self.image = image
+            case .failure(let error): errorText = error.localizedDescription
             }
         }
     }
+}
 
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+private struct VaultTextPreview: View {
+    let resource: VaultMediaResource
+    @State private var text: String?
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if let text {
+                ScrollView {
+                    Text(text)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
+                .scrollIndicators(.automatic)
+            } else if let errorText {
+                ContentUnavailableView("无法显示文本", systemImage: "doc.badge.exclamationmark", description: Text(errorText))
+            } else {
+                ProgressView("正在安全解密文本")
+            }
+        }
+        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: resource.id) {
+            let reader = resource.reader
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<String, Error> in
+                do {
+                    let data = try reader.readAll(maximumBytes: 16 * 1024 * 1024)
+                    guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) else {
+                        throw VaultError.corruptVault
+                    }
+                    return .success(text)
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            switch result {
+            case .success(let text): self.text = text
+            case .failure(let error): errorText = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct VaultPDFResourcePreview: View {
+    let resource: VaultMediaResource
+    @State private var data: Data?
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if let data {
+                VaultPDFPreview(data: data)
+            } else if let errorText {
+                ContentUnavailableView("无法显示 PDF", systemImage: "doc.badge.exclamationmark", description: Text(errorText))
+            } else {
+                ProgressView("正在安全解密 PDF")
+            }
+        }
+        .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: resource.id) {
+            let reader = resource.reader
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<Data, Error> in
+                do { return .success(try reader.readAll(maximumBytes: 256 * 1024 * 1024)) }
+                catch { return .failure(error) }
+            }.value
+            switch result {
+            case .success(let data): self.data = data
+            case .failure(let error): errorText = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -2884,6 +3001,12 @@ struct SecurityCenterView: View {
                             }
                         }
                         HStack {
+                            Button {
+                                exportSecurityLogs()
+                            } label: {
+                                Label("导出加密副本", systemImage: "lock.doc")
+                            }
+                            .disabled(store.securityLogs.isEmpty)
                             Spacer()
                             Button(role: .destructive) {
                                 clearSecurityLogs()
@@ -3229,6 +3352,19 @@ struct SecurityCenterView: View {
             confirmationPrompt: "输入：清空安全日志"
         ) else { return }
         store.clearSecurityLogs(currentPassword: auth.password, confirmationText: auth.confirmation)
+    }
+
+    private func exportSecurityLogs() {
+        guard let auth = requestDangerAuthorization(
+            title: "导出加密安全日志",
+            message: "导出文件使用当前账户密码加密。请输入密码，并输入“导出安全日志”继续。",
+            confirmationPrompt: "输入：导出安全日志"
+        ) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "cnaudit") ?? .data]
+        panel.nameFieldStringValue = "CipherNotes-Security-Audit.cnaudit"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        store.exportEncryptedSecurityAudit(to: url, currentPassword: auth.password, confirmationText: auth.confirmation)
     }
 
     private func disableDecoyPassword() {
@@ -3585,6 +3721,22 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.0",
+            version: "1.1.0",
+            title: "内置媒体与大文件体验",
+            dateText: "2026-07-21",
+            items: [
+                "重构保险柜查看器：图片、PDF、文本、音频和视频统一在应用内查看，不再交给外部 App。",
+                "音频与视频按需解密 4 MB 分块，不生成明文临时文件，大文件不再整体载入内存。",
+                "图片缩略图改为后台降采样，并加入容量受控的 LRU 缓存；图片默认适合窗口并支持缩放。",
+                "大文件导入支持暂停、继续和取消，大文件删除移到后台并显示处理状态。",
+                "笔记搜索加入输入防抖和增量索引；备份增加 SHA-256 完整性清单，保险库保存增加损坏恢复副本。",
+                "密码派生参数改为按账户版本化保存，安全日志可导出为加密审计副本。",
+                "新增 860×620 浅色、深色和强调色自动渲染检查，GitHub Actions 更新到新运行时。",
+                "发布版本更新为 1.1.0 (35)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.9",
             version: "1.0.9",
