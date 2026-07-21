@@ -134,7 +134,7 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
-    func testEmptyUsernamesAndPasswordsAreAllowed() async throws {
+    func testEmptyUsernameIsAllowedButEmptyPasswordIsRejected() async throws {
         await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let url = directory.appendingPathComponent("vault.json")
@@ -142,12 +142,12 @@ final class CryptoServiceTests: XCTestCase {
 
             let store = VaultStore(vaultURL: url)
             store.registerUser(username: "", password: "", confirmation: "")
+            XCTAssertEqual(store.state, .needsAdminSetup)
+            XCTAssertTrue(store.accounts.isEmpty)
+
+            store.registerUser(username: "", password: "secure-password", confirmation: "secure-password")
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertEqual(store.signedInUsername, "未命名账户")
-            XCTAssertEqual(store.accounts.map(\.displayName), ["未命名账户"])
-            store.lock()
-            store.unlock(username: "", password: "")
-            XCTAssertEqual(store.state, .unlocked)
         }
     }
 
@@ -317,38 +317,42 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testLargeVaultFileUsesChunkedStorageAndStreamsBackOut() async throws {
-        try await MainActor.run {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            let url = directory.appendingPathComponent("vault.json")
-            defer { try? FileManager.default.removeItem(at: directory) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = directory.appendingPathComponent("vault.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
 
-            let sourceURL = directory.appendingPathComponent("large-photo.raw")
-            let exportedURL = directory.appendingPathComponent("large-photo-exported.raw")
-            let payload = Data((0..<(5 * 1024 * 1024 + 123)).map { UInt8($0 % 251) })
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try payload.write(to: sourceURL)
+        let sourceURL = directory.appendingPathComponent("large-photo.raw")
+        let exportedURL = directory.appendingPathComponent("large-photo-exported.raw")
+        let payload = Data((0..<(5 * 1024 * 1024 + 123)).map { UInt8($0 % 251) })
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try payload.write(to: sourceURL)
 
-            let store = VaultStore(vaultURL: url)
-            store.registerUser(username: "large", password: "pass", confirmation: "pass")
-            store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
+        let store = VaultStore(vaultURL: url)
+        store.registerUser(username: "large", password: "pass", confirmation: "pass")
+        store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
 
-            guard let item = store.vaultItems.first else {
-                return XCTFail("应该已经移入保险柜")
-            }
-            XCTAssertEqual(item.byteCount, payload.count)
-            XCTAssertEqual(store.vaultItemData(itemID: item.id), payload)
-
-            let attachmentRoot = directory.appendingPathComponent("Attachments")
-            let encryptedFiles = (FileManager.default.enumerator(at: attachmentRoot, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
-                .filter { $0.pathExtension == "bin" }
-            XCTAssertEqual(encryptedFiles.count, 1)
-            let encryptedPrefix = try Data(contentsOf: encryptedFiles[0]).prefix(Data("CNATTACH2\n".utf8).count)
-            XCTAssertEqual(Data(encryptedPrefix), Data("CNATTACH2\n".utf8))
-
-            store.exportVaultItem(itemID: item.id, to: exportedURL)
-            XCTAssertEqual(try Data(contentsOf: exportedURL), payload)
+        let deadline = Date().addingTimeInterval(5)
+        while store.vaultItems.isEmpty, store.vaultImportJobs.contains(where: \.isActive), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
+
+        guard let item = store.vaultItems.first else {
+            return XCTFail("应该已经移入保险柜")
+        }
+        XCTAssertEqual(item.byteCount, payload.count)
+        XCTAssertEqual(store.vaultItemData(itemID: item.id), payload)
+
+        let attachmentRoot = directory.appendingPathComponent("Attachments")
+        let encryptedFiles = (FileManager.default.enumerator(at: attachmentRoot, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
+            .filter { $0.pathExtension == "bin" }
+        XCTAssertEqual(encryptedFiles.count, 1)
+        let encryptedPrefix = try Data(contentsOf: encryptedFiles[0]).prefix(Data("CNATTACH2\n".utf8).count)
+        XCTAssertEqual(Data(encryptedPrefix), Data("CNATTACH2\n".utf8))
+
+        store.exportVaultItem(itemID: item.id, to: exportedURL)
+        XCTAssertEqual(try Data(contentsOf: exportedURL), payload)
     }
 
     func testUserRecordLegacyShortcutMetadataDefaultsToDisabledForOldVaults() throws {
@@ -437,6 +441,9 @@ final class CryptoServiceTests: XCTestCase {
 
             let store = VaultStore(vaultURL: url)
             store.registerUser(username: "owner", password: "old-pass", confirmation: "old-pass")
+            guard let oldRecoveryCode = store.recoveryCodeToShow else {
+                return XCTFail("注册后应该生成恢复码")
+            }
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "Keep", body: "Still here")
 
@@ -449,12 +456,32 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.state, .unlocked)
             store.changeCurrentUserPassword(currentPassword: "old-pass", newPassword: "new-pass", confirmation: "new-pass")
             XCTAssertEqual(store.errorMessage, "当前账户密码已更新")
+            guard let newRecoveryCode = store.recoveryCodeToShow else {
+                return XCTFail("修改密码后应该生成新的恢复码")
+            }
+            XCTAssertNotEqual(oldRecoveryCode, newRecoveryCode)
             store.lock()
             store.unlock(username: "owner", password: "old-pass")
             XCTAssertEqual(store.state, .locked)
             store.unlock(username: "owner", password: "new-pass")
             XCTAssertEqual(store.state, .unlocked)
             XCTAssertEqual(store.notes.first?.body, "Still here")
+
+            store.lock()
+            store.resetPasswordWithRecoveryCode(
+                username: "owner",
+                recoveryCode: oldRecoveryCode,
+                newPassword: "another-pass",
+                confirmation: "another-pass"
+            )
+            XCTAssertEqual(store.state, .locked)
+            store.resetPasswordWithRecoveryCode(
+                username: "owner",
+                recoveryCode: newRecoveryCode,
+                newPassword: "another-pass",
+                confirmation: "another-pass"
+            )
+            XCTAssertEqual(store.state, .unlocked)
         }
     }
 
@@ -494,6 +521,7 @@ final class CryptoServiceTests: XCTestCase {
             store.registerUser(username: "alice", password: "a", confirmation: "a")
             let noteID = store.addNote()
             store.updateNote(id: noteID, title: "给 Bob", body: "这是一条共享内容")
+            XCTAssertNil(store.exportSharedNote(id: noteID, sharePassword: ""))
             guard let package = store.exportSharedNote(id: noteID, sharePassword: "share") else {
                 return XCTFail("应该能导出共享文件")
             }
