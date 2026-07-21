@@ -228,30 +228,30 @@ struct RootView: View {
     private var rootFooter: some View {
         HStack(spacing: 10) {
             Spacer(minLength: 0)
-            Menu {
-                Picker("外观", selection: $appAppearanceRawValue) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.label).tag(appearance.rawValue)
-                    }
+            if !store.accounts.isEmpty {
+                Button {
+                    showingSecurityCenter = true
+                } label: {
+                    Label("安全中心", systemImage: "shield.checkered")
                 }
-                Toggle("减少动效", isOn: $reduceMotion)
-            } label: {
-                Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
+                .disabled(store.state != .unlocked)
             }
             Menu {
                 if !store.accounts.isEmpty {
-                    Button {
-                        showingSecurityCenter = true
-                    } label: {
-                        Label("安全中心", systemImage: "shield.checkered")
-                    }
-                    .disabled(store.state != .unlocked)
                     Button {
                         showingUserManagement = true
                     } label: {
                         Label("账户与安全", systemImage: "person.2.badge.gearshape")
                     }
                     Divider()
+                }
+                Menu("外观") {
+                    Picker("外观", selection: $appAppearanceRawValue) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance.rawValue)
+                        }
+                    }
+                    Toggle("减少动效", isOn: $reduceMotion)
                 }
                 Button {
                     showingChangelog = true
@@ -745,23 +745,20 @@ struct UnlockView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let compact = proxy.size.height < 650
-            ScrollView(.vertical, showsIndicators: compact) {
-                VStack(spacing: compact ? 14 : 22) {
-                    BrandHeader(compact: compact)
-                        .accessibilityAddTraits(.isHeader)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 18) {
+                BrandHeader()
+                    .accessibilityAddTraits(.isHeader)
 
-                    authenticationPanel(compact: compact)
+                authenticationPanel
 
-                    Text("本地账户 · 各自加密 · 无云端")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
-                .padding(.horizontal, compact ? 20 : 40)
-                .padding(.vertical, compact ? 18 : 32)
+                Text("本地账户 · 各自加密 · 无云端")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 28)
         }
         .onAppear {
             mode = store.userCount == 0 ? .register : .login
@@ -781,8 +778,8 @@ struct UnlockView: View {
         }
     }
 
-    private func authenticationPanel(compact: Bool) -> some View {
-        VStack(spacing: compact ? 12 : 14) {
+    private var authenticationPanel: some View {
+        VStack(spacing: 14) {
             Picker("账户操作", selection: $mode) {
                 ForEach(AuthMode.allCases) { item in
                     Text(item.rawValue).tag(item)
@@ -810,7 +807,7 @@ struct UnlockView: View {
             }
         }
         .frame(maxWidth: 420)
-        .glassPanel(radius: 20, padding: compact ? 18 : 24)
+        .glassPanel(radius: 20, padding: 22)
         .frame(maxWidth: 468)
     }
 
@@ -3749,6 +3746,18 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.2",
+            version: "1.1.2",
+            title: "登录稳定性与安全入口",
+            dateText: "2026-07-21",
+            items: [
+                "移除登录页依赖窗口几何信息的布局路径，修复窗口恢复后可能出现的空白界面。",
+                "登录、注册和恢复统一使用稳定的原生滚动容器，任何窗口高度都能访问全部字段与操作。",
+                "安全中心恢复为底部独立入口；外观与次要功能收进“更多”，不再占用主操作位置。",
+                "发布版本更新为 1.1.2 (37)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.1",
             version: "1.1.1",

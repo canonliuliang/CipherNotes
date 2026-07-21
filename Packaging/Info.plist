@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.1.2</string>
     <key>CFBundleVersion</key>
-    <string>36</string>
+    <string>37</string>
     <key>CFBundleBuildDate</key>
     <string>未生成</string>
     <key>LSMinimumSystemVersion</key>

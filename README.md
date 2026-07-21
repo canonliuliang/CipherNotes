@@ -14,9 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.1.1` · 登录界面与窗口适配.
-- `密笺-1.1.1.pkg`: recommended public installer.
-- `密笺-1.1.1.zip`: public portable archive.
+- Current release: `1.1.2` · 登录稳定性与安全入口.
+- `密笺-1.1.2.pkg`: recommended public installer.
+- `密笺-1.1.2.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -141,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.1.2
+git push origin v1.1.2
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +174,12 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.1.2 - 登录稳定性与安全入口
+
+- Removed the account-entry geometry path that could leave a restored window blank.
+- Login, registration, and recovery now use one stable native scrolling surface at every window height.
+- Restored Security Center as the visible primary control; Appearance is now grouped under More with the secondary utilities.
 
 ### 1.1.1 - 登录界面与窗口适配
 

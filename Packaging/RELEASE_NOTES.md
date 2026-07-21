@@ -1,21 +1,20 @@
-# CipherNotes 1.1.1 - 登录界面与窗口适配
+# CipherNotes 1.1.2 - 登录稳定性与安全入口
 
 ## Summary
 
-CipherNotes 1.1.1 refines the account entry experience so it remains calm, native, and fully reachable in compact macOS windows.
+CipherNotes 1.1.2 fixes an account-entry rendering regression and restores the security center as the primary bottom-window action.
 
 ## Highlights
 
-- Rebuilds the login, registration, and recovery entry layout around adaptive vertical space instead of a fixed-height form.
-- Keeps account entry centered at normal window sizes and makes the full form safely scrollable at compact heights.
-- Removes the empty fixed form area that made account-mode changes feel visually unstable.
-- Consolidates bottom-window tools into native macOS menus, preserving every action without horizontal overflow.
-- Retains the automated 860x620 light/dark/accent rendering check for the minimum supported window.
+- Removes the account-entry geometry dependency that could leave a restored app window blank.
+- Uses one reliable native scrolling surface for login, registration, and recovery, so every field remains reachable at any window height.
+- Restores Security Center as the visible primary control; appearance and secondary utilities now live under More.
+- Retains overflow-proof menus, compact-window behavior, and automated 860x620 light/dark/accent rendering checks.
 
 ## Downloads
 
-- `密笺-1.1.1.pkg`: recommended public installer.
-- `密笺-1.1.1.zip`: portable application archive.
+- `密笺-1.1.2.pkg`: recommended public installer.
+- `密笺-1.1.2.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -30,4 +29,4 @@ Requires macOS 14 or later.
 
 ## Publishing
 
-Push tag `v1.1.1` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.2` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
