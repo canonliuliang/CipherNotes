@@ -1,21 +1,21 @@
-# CipherNotes 1.1.5 - 主工作区恢复
+# CipherNotes 1.1.6 - 经典界面回归
 
 ## Summary
 
-CipherNotes 1.1.5 restores the uncluttered post-login workspace after the account-entry redesign.
+CipherNotes 1.1.6 restores the proven 1.0.8 interface throughout the app while retaining the current responsive login page and encrypted data model.
 
 ## Highlights
 
-- Removes the global bottom utility strip after login so it no longer compresses the notes and vault workspace.
-- Keeps Security Center visible as a dedicated native toolbar control.
-- Leaves low-frequency account, appearance, changelog, and legal actions in the standard macOS menu bar.
-- Preserves the fixed account selector and responsive login form panel introduced in 1.1.4.
-- Adds a minimum-window regression test for the unlocked workspace.
+- Restores the 1.0.8 notes, vault, viewer, toolbar, settings, and security-center interface.
+- Preserves the current login, registration, and recovery panel exactly, including its fixed selector and responsive height animation.
+- Keeps the current encrypted vault format, equal-account model, security fixes, and local data compatibility.
+- Adapts the restored interface to asynchronous image previews and the current import-job state model.
+- Verifies both locked and unlocked minimum-window rendering.
 
 ## Downloads
 
-- `密笺-1.1.5.pkg`: recommended public installer.
-- `密笺-1.1.5.zip`: portable application archive.
+- `密笺-1.1.6.pkg`: recommended public installer.
+- `密笺-1.1.6.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -30,4 +30,4 @@ Requires macOS 14 or later.
 
 ## Publishing
 
-Push tag `v1.1.5` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.6` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
