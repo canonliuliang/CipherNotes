@@ -93,12 +93,22 @@ final class VaultStore: ObservableObject {
     private var idleTimer: Timer?
     private var notificationTokens: [NSObjectProtocol] = []
     private var vaultImportCancellationTokens: [UUID: VaultImportCancellationToken] = [:]
+    private var authenticationFailureCounts: [String: Int] = [:]
+    private var authenticationBlockedUntil: [String: Date] = [:]
     private var lastActivity = Date()
     private var imagePreviewCache: [UUID: NSImage] = [:]
     nonisolated private static let maxPreviewImageBytes = 12 * 1024 * 1024
-    nonisolated private static let backgroundImportThresholdBytes = 64 * 1024 * 1024
+    // Keep encryption of moderately sized files off the main actor. Tiny files
+    // still use the synchronous path to avoid task setup overhead.
+    nonisolated private static let backgroundImportThresholdBytes = 4 * 1024 * 1024
     nonisolated private static let attachmentMagic = Data("CNATTACH2\n".utf8)
     nonisolated private static let attachmentChunkSize = 4 * 1024 * 1024
+    nonisolated private static let attachmentChunkOverhead = 12 + 16
+    nonisolated private static let maxEncryptedAttachmentChunkSize = attachmentChunkSize + attachmentChunkOverhead
+    nonisolated private static let maxSharedPackageBytes = 128 * 1024 * 1024
+    nonisolated private static let maxSharedAttachments = 100
+    nonisolated private static let maxSharedAttachmentBytes = 64 * 1024 * 1024
+    nonisolated private static let maxSharedTotalAttachmentBytes = 128 * 1024 * 1024
 
     private struct UserBuild {
         var user: UserRecord
@@ -122,6 +132,10 @@ final class VaultStore: ObservableObject {
     }
 
     func migrateLegacyVault(username: String, oldPassword: String) {
+        guard !oldPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = VaultError.passwordRequired.localizedDescription
+            return
+        }
         let normalizedUsername: String
         do {
             normalizedUsername = try validateUsernameFormat(username)
@@ -238,6 +252,10 @@ final class VaultStore: ObservableObject {
             errorMessage = "两次输入的用户密码不一致"
             return
         }
+        guard !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = VaultError.passwordRequired.localizedDescription
+            return
+        }
         do {
             var file: VaultFile
             if FileManager.default.fileExists(atPath: vaultURL.path) {
@@ -280,6 +298,10 @@ final class VaultStore: ObservableObject {
             errorMessage = "两次输入的新密码不一致"
             return
         }
+        guard !newPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = VaultError.passwordRequired.localizedDescription
+            return
+        }
         do {
             var file = try readVaultFile()
             guard let index = try findUserIndex(username: username, in: file) else {
@@ -317,6 +339,10 @@ final class VaultStore: ObservableObject {
             errorMessage = "两次输入的新密码不一致"
             return
         }
+        guard !newPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = VaultError.passwordRequired.localizedDescription
+            return
+        }
         do {
             var file = try readVaultFile()
             guard let currentUserID,
@@ -330,14 +356,19 @@ final class VaultStore: ObservableObject {
 
             let newSalt = try CryptoService.randomData(count: 16)
             let newPasswordKey = try CryptoService.deriveKey(password: newPassword, salt: newSalt, rounds: file.rounds)
+            let recovery = try makeRecoveryWrap(for: rawKey)
             file.users[index].passwordSalt = newSalt
             file.users[index].wrappedVaultKey = try CryptoService.seal(rawKey, using: newPasswordKey)
+            file.users[index].recoverySalt = recovery.salt
+            file.users[index].recoveryWrappedVaultKey = recovery.wrappedVaultKey
             file.users[index].updatedAt = .now
             file.updatedAt = .now
             try write(file)
             vaultFile = file
             refreshAccounts(from: file)
+            recoveryCodeToShow = recovery.code
             recordSecurityEvent(.passwordChanged, message: "当前账户密码已更新")
+            recordSecurityEvent(.recoveryCodeGenerated, message: "密码更新后已生成新的恢复码")
             errorMessage = "当前账户密码已更新"
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码更新失败"
@@ -346,6 +377,8 @@ final class VaultStore: ObservableObject {
 
     @discardableResult
     func unlock(username: String, password: String) -> Bool {
+        let identifier = "username:\(CryptoService.normalizedUsername(username))"
+        guard canAttemptAuthentication(identifier) else { return false }
         do {
             let file = try readVaultFile()
             guard let user = try findUser(username: username, in: file) else {
@@ -354,10 +387,15 @@ final class VaultStore: ObservableObject {
             let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
             let rawKey = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
             try finishUnlock(file: file, user: user, rawKey: rawKey, username: user.displayName ?? CryptoService.normalizedUsername(username))
+            clearAuthenticationFailures(for: identifier)
             recordSecurityEvent(.loginSucceeded, message: "账户已用密码登录")
             return true
         } catch {
-            if unlockWithDecoyPassword(username: username, password: password) { return true }
+            if unlockWithDecoyPassword(username: username, password: password) {
+                clearAuthenticationFailures(for: identifier)
+                return true
+            }
+            registerAuthenticationFailure(for: identifier)
             errorMessage = (error as? VaultError)?.localizedDescription ?? "无法登录"
             return false
         }
@@ -365,6 +403,8 @@ final class VaultStore: ObservableObject {
 
     @discardableResult
     func unlock(userID: UUID, password: String) -> Bool {
+        let identifier = "userID:\(userID.uuidString)"
+        guard canAttemptAuthentication(identifier) else { return false }
         do {
             let file = try readVaultFile()
             guard let user = file.users.first(where: { $0.id == userID }) else {
@@ -373,10 +413,15 @@ final class VaultStore: ObservableObject {
             let passwordKey = try CryptoService.deriveKey(password: password, salt: user.passwordSalt, rounds: file.rounds)
             let rawKey = try CryptoService.open(user.wrappedVaultKey, using: passwordKey)
             try finishUnlock(file: file, user: user, rawKey: rawKey, username: user.displayName ?? "本地账户")
+            clearAuthenticationFailures(for: identifier)
             recordSecurityEvent(.loginSucceeded, message: "账户已用密码登录")
             return true
         } catch {
-            if unlockWithDecoyPassword(userID: userID, password: password) { return true }
+            if unlockWithDecoyPassword(userID: userID, password: password) {
+                clearAuthenticationFailures(for: identifier)
+                return true
+            }
+            registerAuthenticationFailure(for: identifier)
             errorMessage = (error as? VaultError)?.localizedDescription ?? "无法登录"
             return false
         }
@@ -606,6 +651,10 @@ final class VaultStore: ObservableObject {
 
     func exportSharedNote(id: UUID, sharePassword: String) -> Data? {
         if blockAdvancedProtectionAction("高级数据保护已开启，共享导出已阻止") { return nil }
+        guard !sharePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "共享密码不能为空"
+            return nil
+        }
         guard let note = notes.first(where: { $0.id == id }) else {
             errorMessage = "请选择一条要共享的笔记"
             return nil
@@ -641,6 +690,14 @@ final class VaultStore: ObservableObject {
     @discardableResult
     func importSharedNote(data: Data, sharePassword: String) -> UUID? {
         if blockAdvancedProtectionAction("高级数据保护已开启，共享导入已阻止") { return nil }
+        guard !sharePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "共享密码不能为空"
+            return nil
+        }
+        guard data.count <= Self.maxSharedPackageBytes else {
+            errorMessage = "共享文件过大，无法导入"
+            return nil
+        }
         do {
             let package = try JSONDecoder().decode(SharedNotePackage.self, from: data)
             guard package.version == Self.sharedNoteVersion else { throw VaultError.corruptVault }
@@ -651,13 +708,22 @@ final class VaultStore: ObservableObject {
             title = "共享：\(title)"
             let prefix = payload.senderUsername.map { "来自 \($0)\n\n" } ?? ""
             guard let vaultKey, let currentUserID else { throw VaultError.corruptVault }
+            guard payload.attachments.count <= Self.maxSharedAttachments else { throw VaultError.corruptVault }
             var attachments: [VaultAttachment] = []
+            var totalAttachmentBytes = 0
             do {
                 for sharedAttachment in payload.attachments {
+                    guard sharedAttachment.byteCount >= 0,
+                          sharedAttachment.byteCount == sharedAttachment.data.count,
+                          sharedAttachment.byteCount <= Self.maxSharedAttachmentBytes,
+                          totalAttachmentBytes <= Self.maxSharedTotalAttachmentBytes - sharedAttachment.byteCount else {
+                        throw VaultError.corruptVault
+                    }
+                    totalAttachmentBytes += sharedAttachment.byteCount
                     let attachment = VaultAttachment(
                         fileName: sharedAttachment.fileName,
                         contentType: sharedAttachment.contentType,
-                        byteCount: sharedAttachment.byteCount
+                        byteCount: sharedAttachment.data.count
                     )
                     try writeAttachmentData(sharedAttachment.data, for: attachment.id, userID: currentUserID, rawKey: vaultKey)
                     attachments.append(attachment)
@@ -682,6 +748,7 @@ final class VaultStore: ObservableObject {
 
     func lock() {
         guard state == .unlocked else { return }
+        cancelAllVaultImportJobs()
         recordSecurityEvent(.locked, message: "账户已锁定")
         notes.removeAll(keepingCapacity: false)
         vaultItems.removeAll(keepingCapacity: false)
@@ -739,10 +806,25 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    func updateNote(id: UUID, title: String? = nil, body: String? = nil) {
+    func updateNote(id: UUID, title: String? = nil, body: String? = nil, tags: [String]? = nil) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
-        if let title { notes[index].title = title }
-        if let body { notes[index].body = body }
+        var changed = false
+        if let title, notes[index].title != title {
+            notes[index].title = title
+            changed = true
+        }
+        if let body, notes[index].body != body {
+            notes[index].body = body
+            changed = true
+        }
+        if let tags {
+            let cleaned = Self.cleanedTags(tags)
+            if notes[index].tags != cleaned {
+                notes[index].tags = cleaned
+                changed = true
+            }
+        }
+        guard changed else { return }
         notes[index].updatedAt = .now
         persist()
         touchActivity()
@@ -776,14 +858,13 @@ final class VaultStore: ObservableObject {
     }
 
     func updateTags(noteID: UUID, tags: [String]) {
-        guard let index = notes.firstIndex(where: { $0.id == noteID }) else { return }
-        let cleaned = Array(Set(tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted {
+        updateNote(id: noteID, tags: tags)
+    }
+
+    nonisolated private static func cleanedTags(_ tags: [String]) -> [String] {
+        Array(Set(tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
-        notes[index].tags = cleaned
-        notes[index].updatedAt = .now
-        persist()
-        touchActivity()
     }
 
     func importFilesToVault(urls: [URL], deleteOriginals: Bool = true) {
@@ -903,6 +984,9 @@ final class VaultStore: ObservableObject {
                     for item in importedItems {
                         try? Self.removeAttachmentBlob(id: item.id, userID: currentUserID, vaultURL: vaultURL)
                     }
+                    await MainActor.run {
+                        importJobs.forEach { self.finishVaultImportJob(id: $0.id, status: .cancelled) }
+                    }
                     return
                 }
 
@@ -956,6 +1040,16 @@ final class VaultStore: ObservableObject {
 
     func clearFinishedVaultImportJobs() {
         vaultImportJobs.removeAll { !$0.isActive }
+    }
+
+    private func cancelAllVaultImportJobs() {
+        for id in vaultImportCancellationTokens.keys {
+            vaultImportCancellationTokens[id]?.cancel()
+        }
+        for index in vaultImportJobs.indices where vaultImportJobs[index].isActive {
+            vaultImportJobs[index].status = .cancelling
+            vaultImportJobs[index].updatedAt = .now
+        }
     }
 
     private func beginVaultImportJobs(for urls: [URL]) -> [VaultImportJob] {
@@ -1059,9 +1153,15 @@ final class VaultStore: ObservableObject {
 
     func deleteVaultItem(itemID: UUID) {
         guard let currentUserID else { return }
+        guard vaultItems.contains(where: { $0.id == itemID }) else { return }
+        do {
+            try removeAttachmentBlob(id: itemID, userID: currentUserID)
+        } catch {
+            errorMessage = "删除保险柜文件失败：\(error.localizedDescription)"
+            return
+        }
         vaultItems.removeAll { $0.id == itemID }
         imagePreviewCache.removeValue(forKey: itemID)
-        try? removeAttachmentBlob(id: itemID, userID: currentUserID)
         persist()
         touchActivity()
         errorMessage = "文件已从保险柜删除"
@@ -1070,17 +1170,30 @@ final class VaultStore: ObservableObject {
 
     func deleteNotes(at offsets: IndexSet) {
         guard let currentUserID else { return }
-        for index in offsets where notes.indices.contains(index) {
-            removeAttachmentFiles(in: notes[index], userID: currentUserID)
+        var removedAny = false
+        for index in offsets.sorted(by: >) where notes.indices.contains(index) {
+            do {
+                try removeAttachmentFiles(in: notes[index], userID: currentUserID)
+                notes.remove(at: index)
+                removedAny = true
+            } catch {
+                errorMessage = "删除笔记附件失败：\(error.localizedDescription)"
+            }
         }
-        notes.remove(atOffsets: offsets)
-        persist()
-        touchActivity()
+        if removedAny {
+            persist()
+            touchActivity()
+        }
     }
 
     func deleteNote(id: UUID) {
         if let currentUserID, let note = notes.first(where: { $0.id == id }) {
-            removeAttachmentFiles(in: note, userID: currentUserID)
+            do {
+                try removeAttachmentFiles(in: note, userID: currentUserID)
+            } catch {
+                errorMessage = "删除笔记附件失败：\(error.localizedDescription)"
+                return
+            }
         }
         notes.removeAll { $0.id == id }
         persist()
@@ -1099,7 +1212,10 @@ final class VaultStore: ObservableObject {
             guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
                 throw VaultError.invalidUsername
             }
-            try? FileManager.default.removeItem(at: attachmentDirectory(for: currentUserID))
+            let userAttachments = attachmentDirectory(for: currentUserID)
+            if FileManager.default.fileExists(atPath: userAttachments.path) {
+                try FileManager.default.removeItem(at: userAttachments)
+            }
             file.users.remove(at: index)
             file.updatedAt = .now
             try write(file)
@@ -1123,12 +1239,20 @@ final class VaultStore: ObservableObject {
     }
 
     private func sharedAttachments(for note: Note, userID: UUID, rawKey: Data) throws -> [SharedAttachmentPayload] {
-        try note.attachments.map { attachment in
-            SharedAttachmentPayload(
+        guard note.attachments.count <= Self.maxSharedAttachments else { throw VaultError.corruptVault }
+        var totalBytes = 0
+        return try note.attachments.map { attachment in
+            let data = try readAttachmentData(id: attachment.id, userID: userID, rawKey: rawKey)
+            guard data.count <= Self.maxSharedAttachmentBytes,
+                  totalBytes <= Self.maxSharedTotalAttachmentBytes - data.count else {
+                throw VaultError.corruptVault
+            }
+            totalBytes += data.count
+            return SharedAttachmentPayload(
                 fileName: attachment.fileName,
                 contentType: attachment.contentType,
-                byteCount: attachment.byteCount,
-                data: try readAttachmentData(id: attachment.id, userID: userID, rawKey: rawKey)
+                byteCount: data.count,
+                data: data
             )
         }
     }
@@ -1157,13 +1281,21 @@ final class VaultStore: ObservableObject {
             let encrypted = try Data(contentsOf: url)
             return try CryptoService.open(encrypted, using: SymmetricKey(data: rawKey))
         }
-        _ = try readExactData(from: input, count: 8)
+        let declaredByteCount = try readUInt64(from: input)
+        guard declaredByteCount <= UInt64(Int.max) else { throw VaultError.corruptVault }
+        var processedByteCount = 0
         var plaintext = Data()
         while true {
             guard let length = try readUInt32(from: input) else { break }
+            guard length > 0, length <= UInt32(Self.maxEncryptedAttachmentChunkSize) else {
+                throw VaultError.corruptVault
+            }
             let encrypted = try readExactData(from: input, count: Int(length))
             plaintext.append(try CryptoService.open(encrypted, using: SymmetricKey(data: rawKey)))
+            processedByteCount += encrypted.count - Self.attachmentChunkOverhead
+            guard processedByteCount <= Int(declaredByteCount) else { throw VaultError.corruptVault }
         }
+        guard processedByteCount == Int(declaredByteCount) else { throw VaultError.corruptVault }
         return plaintext
     }
 
@@ -1238,12 +1370,20 @@ final class VaultStore: ObservableObject {
             try output.write(contentsOf: try CryptoService.open(encrypted, using: SymmetricKey(data: rawKey)))
             return
         }
-        _ = try readExactData(from: input, count: 8)
+        let declaredByteCount = try readUInt64(from: input)
+        guard declaredByteCount <= UInt64(Int.max) else { throw VaultError.corruptVault }
+        var processedByteCount = 0
         while true {
             guard let length = try readUInt32(from: input) else { break }
+            guard length > 0, length <= UInt32(Self.maxEncryptedAttachmentChunkSize) else {
+                throw VaultError.corruptVault
+            }
             let encrypted = try readExactData(from: input, count: Int(length))
             try output.write(contentsOf: try CryptoService.open(encrypted, using: SymmetricKey(data: rawKey)))
+            processedByteCount += encrypted.count - Self.attachmentChunkOverhead
+            guard processedByteCount <= Int(declaredByteCount) else { throw VaultError.corruptVault }
         }
+        guard processedByteCount == Int(declaredByteCount) else { throw VaultError.corruptVault }
     }
 
     private func writeAttachmentHeader(to output: FileHandle, byteCount: Int) throws {
@@ -1276,6 +1416,13 @@ final class VaultStore: ObservableObject {
         }
     }
 
+    private func readUInt64(from input: FileHandle) throws -> UInt64 {
+        let data = try readExactData(from: input, count: 8)
+        return data.enumerated().reduce(UInt64(0)) { result, pair in
+            result | (UInt64(pair.element) << UInt64(pair.offset * 8))
+        }
+    }
+
     private func readExactData(from input: FileHandle, count: Int) throws -> Data {
         let data = try input.read(upToCount: count) ?? Data()
         guard data.count == count else { throw VaultError.corruptVault }
@@ -1304,8 +1451,10 @@ final class VaultStore: ObservableObject {
         try FileManager.default.copyItem(at: attachmentURL(for: sourceID, userID: userID), to: attachmentURL(for: targetID, userID: userID))
     }
 
-    private func removeAttachmentFiles(in note: Note, userID: UUID) {
-        note.attachments.forEach { try? removeAttachmentBlob(id: $0.id, userID: userID) }
+    private func removeAttachmentFiles(in note: Note, userID: UUID) throws {
+        for attachment in note.attachments {
+            try removeAttachmentBlob(id: attachment.id, userID: userID)
+        }
     }
 
     private func removeAttachmentBlob(id attachmentID: UUID, userID: UUID) throws {
@@ -1473,7 +1622,7 @@ final class VaultStore: ObservableObject {
                 return false
             }
         case .eraseLocalData:
-            destroyLocalVaultAfterDecoyPassword()
+            guard destroyLocalVaultAfterDecoyPassword() else { return false }
         }
         return true
     }
@@ -1487,9 +1636,20 @@ final class VaultStore: ObservableObject {
         return candidate == verifier
     }
 
-    private func destroyLocalVaultAfterDecoyPassword() {
-        try? FileManager.default.removeItem(at: vaultURL)
-        try? FileManager.default.removeItem(at: attachmentsRootURL())
+    private func destroyLocalVaultAfterDecoyPassword() -> Bool {
+        do {
+            if FileManager.default.fileExists(atPath: vaultURL.path) {
+                try FileManager.default.removeItem(at: vaultURL)
+            }
+            let attachmentsRoot = attachmentsRootURL()
+            if FileManager.default.fileExists(atPath: attachmentsRoot.path) {
+                try FileManager.default.removeItem(at: attachmentsRoot)
+            }
+        } catch {
+            errorMessage = "无法确认本地数据已销毁，请检查文件权限并手动删除保险库文件：\(error.localizedDescription)"
+            state = .locked
+            return false
+        }
         vaultFile = nil
         vaultKey = nil
         currentUserID = nil
@@ -1505,6 +1665,7 @@ final class VaultStore: ObservableObject {
         autoLockMinutes = 5
         state = .needsAdminSetup
         errorMessage = nil
+        return true
     }
 
     nonisolated private static func decoyVerifier(password: String, salt: Data, rounds: UInt32) throws -> Data {
@@ -1675,6 +1836,30 @@ final class VaultStore: ObservableObject {
 
     private func touchActivity() { lastActivity = .now }
 
+    private func canAttemptAuthentication(_ identifier: String) -> Bool {
+        guard let blockedUntil = authenticationBlockedUntil[identifier] else { return true }
+        let remaining = blockedUntil.timeIntervalSinceNow
+        guard remaining > 0 else {
+            authenticationBlockedUntil[identifier] = nil
+            return true
+        }
+        errorMessage = "登录失败次数过多，请在 \(Int(ceil(remaining))) 秒后重试"
+        return false
+    }
+
+    private func registerAuthenticationFailure(for identifier: String) {
+        let count = (authenticationFailureCounts[identifier] ?? 0) + 1
+        authenticationFailureCounts[identifier] = count
+        guard count >= 3 else { return }
+        let delay = min(30.0, pow(2.0, Double(min(count - 3, 5))))
+        authenticationBlockedUntil[identifier] = Date().addingTimeInterval(delay)
+    }
+
+    private func clearAuthenticationFailures(for identifier: String) {
+        authenticationFailureCounts[identifier] = nil
+        authenticationBlockedUntil[identifier] = nil
+    }
+
     private func installPrivacyObservers() {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
             Task { @MainActor in self?.touchActivity() }
@@ -1769,6 +1954,10 @@ final class VaultStore: ObservableObject {
     }
 
     func backupVault(to destinationURL: URL) {
+        guard !vaultImportJobs.contains(where: \.isActive) else {
+            errorMessage = "请等待保险柜文件导入完成后再备份"
+            return
+        }
         let accessing = destinationURL.startAccessingSecurityScopedResource()
         defer { if accessing { destinationURL.stopAccessingSecurityScopedResource() } }
         let dateTag = Self.backupDateFormatter.string(from: .now)
@@ -1791,15 +1980,11 @@ final class VaultStore: ObservableObject {
         recordSecurityEvent(.backupCreated, message: "保险库已备份")
     }
 
-    func restoreVault(from backupURL: URL) {
-        restoreVault(from: backupURL, currentPassword: "", confirmationText: "还原保险库", skipPasswordCheck: true)
-    }
-
     func restoreVault(from backupURL: URL, currentPassword: String, confirmationText: String) {
-        restoreVault(from: backupURL, currentPassword: currentPassword, confirmationText: confirmationText, skipPasswordCheck: false)
-    }
-
-    private func restoreVault(from backupURL: URL, currentPassword: String, confirmationText: String, skipPasswordCheck: Bool) {
+        guard state == .unlocked else {
+            errorMessage = "请先解锁当前账户再还原保险库"
+            return
+        }
         guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "还原保险库" else {
             errorMessage = "请输入“还原保险库”以确认"
             return
@@ -1816,16 +2001,12 @@ final class VaultStore: ObservableObject {
             errorMessage = "备份文件无效或已损坏"
             return
         }
-        if !skipPasswordCheck {
-            do {
-                try validateCurrentUserPassword(currentPassword, against: try readVaultFile())
-                if state == .unlocked {
-                    recordSecurityEvent(.backupRestored, message: "保险库即将从备份还原")
-                }
-            } catch {
-                errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码不正确"
-                return
-            }
+        do {
+            try validateCurrentUserPassword(currentPassword, against: try readVaultFile())
+            recordSecurityEvent(.backupRestored, message: "保险库即将从备份还原")
+        } catch {
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码不正确"
+            return
         }
         if state == .unlocked { lock() }
         do {

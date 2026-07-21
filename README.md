@@ -14,9 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.0.8` · 正式版收口与稳定性优化.
-- `密笺-1.0.8.pkg`: recommended public installer.
-- `密笺-1.0.8.zip`: public portable archive.
+- Current release: `1.0.9` · 安全加固与性能优化.
+- `密笺-1.0.9.pkg`: recommended public installer.
+- `密笺-1.0.9.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -141,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.0.8
-git push origin v1.0.8
+git tag v1.0.9
+git push origin v1.0.9
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +174,13 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.0.9 - 安全加固与性能优化
+
+- Batched note title, body, and tag updates into one encrypted write and skipped no-op saves.
+- Moved files of 4 MB or larger to background vault encryption to keep the interface responsive.
+- Added login backoff, mandatory shared-note passwords, package size limits, and stricter encrypted-chunk validation.
+- Rotated recovery codes after password changes and hardened account deletion, backup restore, import cancellation, and local-data erasure paths.
 
 ### 1.0.8 - 正式版收口与稳定性优化
 

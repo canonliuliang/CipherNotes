@@ -1801,24 +1801,14 @@ struct NoteEditor: View {
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             guard !Task.isCancelled else { return }
-            if let current = store.notes.first(where: { $0.id == id }), current.title != title || current.body != body {
-                store.updateNote(id: id, title: title, body: body)
-            }
-            if let current = store.notes.first(where: { $0.id == id }), current.tags != tags {
-                store.updateTags(noteID: id, tags: tags)
-            }
+            store.updateNote(id: id, title: title, body: body, tags: tags)
             savePending = false
         }
     }
 
     private func saveNow() {
         guard loadedNoteID == noteID else { return }
-        if let current = store.notes.first(where: { $0.id == noteID }), current.title != draftTitle || current.body != draftBody {
-            store.updateNote(id: noteID, title: draftTitle, body: draftBody)
-        }
-        if let current = store.notes.first(where: { $0.id == noteID }), current.tags != parsedTags {
-            store.updateTags(noteID: noteID, tags: parsedTags)
-        }
+        store.updateNote(id: noteID, title: draftTitle, body: draftBody, tags: parsedTags)
         savePending = false
     }
 
@@ -2601,7 +2591,7 @@ struct ShareExportView: View {
                 .foregroundStyle(.secondary)
             SecureField("共享密码", text: $password)
                 .textFieldStyle(.roundedBorder)
-            Text("共享密码可以留空，也可以很短；越简单越容易被猜到。应用不会保存这个密码。")
+            Text("共享密码不能为空，也不应过短。应用不会保存这个密码。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
@@ -2609,6 +2599,7 @@ struct ShareExportView: View {
                 Spacer()
                 Button("选择保存位置", action: onExport)
                     .buttonStyle(AppleProminentButtonStyle())
+                    .disabled(password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
@@ -2634,6 +2625,7 @@ struct ShareImportView: View {
                 Spacer()
                 Button("导入", action: onImport)
                     .buttonStyle(AppleProminentButtonStyle())
+                    .disabled(password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
@@ -3593,6 +3585,19 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.0.9",
+            version: "1.0.9",
+            title: "安全加固与性能优化",
+            dateText: "2026-07-21",
+            items: [
+                "笔记标题、正文和标签合并为一次加密写入，内容未变化时不再重复保存。",
+                "4 MB 及以上文件改为后台加密导入，降低主界面卡顿。",
+                "加入登录失败退避、共享密码必填、共享包大小限制和加密分块完整性校验。",
+                "修改密码后自动更换恢复码，并加固账户删除、备份还原、导入取消和本地数据销毁流程。",
+                "发布版本更新为 1.0.9 (34)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.0.7",
             version: "1.0.7",
