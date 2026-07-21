@@ -1,21 +1,21 @@
-# CipherNotes 1.1.4 - 灵动登录面板
+# CipherNotes 1.1.5 - 主工作区恢复
 
 ## Summary
 
-CipherNotes 1.1.4 restores the intended account-entry interaction: a stable segmented selector above a glass panel that smoothly resizes around each form.
+CipherNotes 1.1.5 restores the uncluttered post-login workspace after the account-entry redesign.
 
 ## Highlights
 
-- Keeps the login, registration, and recovery segmented selector at a fixed position and height.
-- Animates the glass panel to each form's measured content height with a restrained spring response.
-- Fades and gently offsets form content during mode changes while respecting Reduce Motion.
-- Anchors the account panel at the top so expansion happens downward without shifting the selector.
-- Restores Appearance, Security Center, Accounts, Changelog, and Legal as direct bottom-window controls.
+- Removes the global bottom utility strip after login so it no longer compresses the notes and vault workspace.
+- Keeps Security Center visible as a dedicated native toolbar control.
+- Leaves low-frequency account, appearance, changelog, and legal actions in the standard macOS menu bar.
+- Preserves the fixed account selector and responsive login form panel introduced in 1.1.4.
+- Adds a minimum-window regression test for the unlocked workspace.
 
 ## Downloads
 
-- `密笺-1.1.4.pkg`: recommended public installer.
-- `密笺-1.1.4.zip`: portable application archive.
+- `密笺-1.1.5.pkg`: recommended public installer.
+- `密笺-1.1.5.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -23,11 +23,11 @@ Requires macOS 14 or later.
 
 - Release metadata validation
 - Swift debug and release builds
-- 32 automated tests
+- 33 automated tests
 - Minimum-window light/dark/accent render checks
 - Strict application code-signature verification
 - Installer payload verification
 
 ## Publishing
 
-Push tag `v1.1.4` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.5` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.

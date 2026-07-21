@@ -170,7 +170,9 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            rootFooter
+            if store.state != .unlocked {
+                rootFooter
+            }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
         }
@@ -1357,6 +1359,12 @@ struct NotesView: View {
     @ToolbarContentBuilder
     private func workspaceToolbar() -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                NotificationCenter.default.post(name: .cipherNotesShowSecurityCenter, object: nil)
+            } label: {
+                Label("安全中心", systemImage: "shield.checkered")
+            }
+            .help("安全中心")
             Menu {
                 if workspaceMode == .notes {
                     notesToolbarMenu
@@ -3785,6 +3793,19 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.5",
+            version: "1.1.5",
+            title: "主工作区恢复",
+            dateText: "2026-07-21",
+            items: [
+                "登录后不再显示全局底部按钮栏，笔记与保险柜恢复完整可用高度。",
+                "安全中心改为主工具栏中的独立盾牌按钮，保持醒目且随时可达。",
+                "账户、外观、更新日志和法律声明保留在标准 macOS 菜单栏，不再挤占内容区域。",
+                "新增登录后主工作区的最小窗口渲染检查，防止再次出现空白或被辅助栏挤出窗口。",
+                "发布版本更新为 1.1.5 (40)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.4",
             version: "1.1.4",

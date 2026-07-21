@@ -47,6 +47,41 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testUnlockedMinimumWindowRendersWorkspace() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let introKey = "hasSeenCipherNotesIntro"
+        let savedIntroState = UserDefaults.standard.object(forKey: introKey)
+        defer {
+            if let savedIntroState {
+                UserDefaults.standard.set(savedIntroState, forKey: introKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: introKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: introKey)
+
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "界面测试", password: "workspace-pass", confirmation: "workspace-pass")
+        XCTAssertEqual(store.state, .unlocked)
+
+        let root = RootView()
+            .environmentObject(store)
+            .environment(\.colorScheme, .light)
+        let view = NSHostingView(rootView: root)
+        view.frame = NSRect(x: 0, y: 0, width: 860, height: 620)
+        view.layoutSubtreeIfNeeded()
+
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertGreaterThan(
+            renderedForegroundSampleCount(in: bitmap),
+            600,
+            "登录后的主工作区不能空白或被辅助栏挤出窗口"
+        )
+    }
+
     private func renderedForegroundSampleCount(in bitmap: NSBitmapImageRep) -> Int {
         guard let data = bitmap.bitmapData else { return 0 }
         let bytesPerPixel = max(1, bitmap.bitsPerPixel / 8)
