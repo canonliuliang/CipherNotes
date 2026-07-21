@@ -745,21 +745,19 @@ struct UnlockView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 18) {
-                BrandHeader()
-                    .accessibilityAddTraits(.isHeader)
+        VStack(spacing: 18) {
+            BrandHeader()
+                .accessibilityAddTraits(.isHeader)
 
-                authenticationPanel
+            authenticationPanel
 
-                Text("本地账户 · 各自加密 · 无云端")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 28)
+            Text("本地账户 · 各自加密 · 无云端")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
         .onAppear {
             mode = store.userCount == 0 ? .register : .login
             selectedAccountID = selectedAccountID ?? store.accounts.first?.id
@@ -3746,6 +3744,18 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.3",
+            version: "1.1.3",
+            title: "登录页渲染修复",
+            dateText: "2026-07-21",
+            items: [
+                "移除可能在启动时渲染出空白窗口的登录页滚动容器路径。",
+                "登录、注册和恢复恢复为稳定的原生窗口居中布局，并保持紧凑窗口下的完整可见性。",
+                "自动界面检查新增前景内容断言，直接登录页若只剩背景会导致测试失败。",
+                "发布版本更新为 1.1.3 (38)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.2",
             version: "1.1.2",

@@ -9,6 +9,16 @@ final class CryptoServiceTests: XCTestCase {
     func testMinimumWindowRendersInLightAndDarkAppearances() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let introKey = "hasSeenCipherNotesIntro"
+        let savedIntroState = UserDefaults.standard.object(forKey: introKey)
+        defer {
+            if let savedIntroState {
+                UserDefaults.standard.set(savedIntroState, forKey: introKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: introKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: introKey)
         let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
         for scheme in [ColorScheme.light, .dark] {
             for tint in [Color.blue, .mint] {
@@ -28,8 +38,33 @@ final class CryptoServiceTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, 860)
                 XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, 620)
                 XCTAssertNotNil(bitmap.representation(using: .png, properties: [:]))
+                XCTAssertGreaterThan(
+                    renderedForegroundSampleCount(in: bitmap),
+                    200,
+                    "登录页不能只渲染空白背景"
+                )
             }
         }
+    }
+
+    private func renderedForegroundSampleCount(in bitmap: NSBitmapImageRep) -> Int {
+        guard let data = bitmap.bitmapData else { return 0 }
+        let bytesPerPixel = max(1, bitmap.bitsPerPixel / 8)
+        let bytesPerRow = bitmap.bytesPerRow
+        let baseline = (Int(data[0]), Int(data[1]), Int(data[2]))
+        var count = 0
+
+        for y in Swift.stride(from: 0, to: bitmap.pixelsHigh, by: 8) {
+            for x in Swift.stride(from: 0, to: bitmap.pixelsWide, by: 8) {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                guard offset + 2 < bitmap.bytesPerRow * bitmap.pixelsHigh else { continue }
+                let difference = abs(Int(data[offset]) - baseline.0)
+                    + abs(Int(data[offset + 1]) - baseline.1)
+                    + abs(Int(data[offset + 2]) - baseline.2)
+                if difference > 24 { count += 1 }
+            }
+        }
+        return count
     }
 
     func testEncryptionRoundTrip() throws {
