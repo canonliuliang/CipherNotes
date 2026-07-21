@@ -226,8 +226,18 @@ struct RootView: View {
     }
 
     private var rootFooter: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 14) {
             Spacer(minLength: 0)
+            Menu {
+                Picker("外观", selection: $appAppearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance.rawValue)
+                    }
+                }
+                Toggle("减少动效", isOn: $reduceMotion)
+            } label: {
+                Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
+            }
             if !store.accounts.isEmpty {
                 Button {
                     showingSecurityCenter = true
@@ -235,36 +245,21 @@ struct RootView: View {
                     Label("安全中心", systemImage: "shield.checkered")
                 }
                 .disabled(store.state != .unlocked)
+                Button {
+                    showingUserManagement = true
+                } label: {
+                    Label("账户与安全", systemImage: "person.2.badge.gearshape")
+                }
             }
-            Menu {
-                if !store.accounts.isEmpty {
-                    Button {
-                        showingUserManagement = true
-                    } label: {
-                        Label("账户与安全", systemImage: "person.2.badge.gearshape")
-                    }
-                    Divider()
-                }
-                Menu("外观") {
-                    Picker("外观", selection: $appAppearanceRawValue) {
-                        ForEach(AppAppearance.allCases) { appearance in
-                            Text(appearance.label).tag(appearance.rawValue)
-                        }
-                    }
-                    Toggle("减少动效", isOn: $reduceMotion)
-                }
-                Button {
-                    showingChangelog = true
-                } label: {
-                    Label("更新日志", systemImage: "sparkles")
-                }
-                Button {
-                    showingLegalDisclosure = true
-                } label: {
-                    Label("法律声明", systemImage: "doc.text.magnifyingglass")
-                }
+            Button {
+                showingChangelog = true
             } label: {
-                Label("更多", systemImage: "ellipsis.circle")
+                Label("更新日志", systemImage: "sparkles")
+            }
+            Button {
+                showingLegalDisclosure = true
+            } label: {
+                Label("法律声明", systemImage: "doc.text.magnifyingglass")
             }
         }
         .buttonStyle(.borderless)
@@ -670,6 +665,14 @@ private enum AuthMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private struct AuthFormHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 1
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct PasswordStrengthIndicator: View {
     let password: String
 
@@ -733,6 +736,7 @@ struct UnlockView: View {
     @State private var confirmation = ""
     @State private var recoveryCode = ""
     @State private var selectedAccountID: UUID?
+    @State private var formHeight: CGFloat = 240
     @FocusState private var focused: Bool
 
     private var selectedAccount: AccountSummary? {
@@ -755,9 +759,10 @@ struct UnlockView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 24)
-        .padding(.vertical, 20)
+        .padding(.top, 32)
+        .padding(.bottom, 20)
         .onAppear {
             mode = store.userCount == 0 ? .register : .login
             selectedAccountID = selectedAccountID ?? store.accounts.first?.id
@@ -787,26 +792,62 @@ struct UnlockView: View {
             .controlSize(.regular)
             .accessibilityLabel("账户操作")
 
-            Group {
-                switch mode {
-                case .login:
-                    loginForm
-                case .register:
-                    registerForm
-                case .recover:
-                    recoveryForm
+            ZStack(alignment: .top) {
+                VStack(spacing: 14) {
+                    activeAuthenticationForm
+                        .id(mode)
+                        .transition(authFormTransition)
+
+                    if let error = store.errorMessage {
+                        ErrorText(error)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: AuthFormHeightKey.self, value: proxy.size.height)
+                    }
                 }
             }
-            .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
-            .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: mode)
-
-            if let error = store.errorMessage {
-                ErrorText(error)
-            }
+            .frame(height: formHeight, alignment: .top)
+            .clipped()
         }
         .frame(maxWidth: 420)
         .glassPanel(radius: 20, padding: 22)
         .frame(maxWidth: 468)
+        .onPreferenceChange(AuthFormHeightKey.self) { height in
+            guard height > 1, abs(height - formHeight) > 0.5 else { return }
+            if reduceMotion {
+                formHeight = height
+            } else {
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
+                    formHeight = height
+                }
+            }
+        }
+        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: mode)
+    }
+
+    @ViewBuilder
+    private var activeAuthenticationForm: some View {
+        switch mode {
+        case .login:
+            loginForm
+        case .register:
+            registerForm
+        case .recover:
+            recoveryForm
+        }
+    }
+
+    private var authFormTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity.combined(with: .offset(y: -5))
+        )
     }
 
     private var loginForm: some View {
@@ -3744,6 +3785,19 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.4",
+            version: "1.1.4",
+            title: "灵动登录面板",
+            dateText: "2026-07-21",
+            items: [
+                "登录、注册和恢复三段选择栏保持固定位置与固定高度，不再随内容跳动。",
+                "下方玻璃面板根据当前表单的实际高度平滑伸缩，并加入克制的弹性反馈。",
+                "切换内容使用淡入与轻微位移动画，同时完整支持“减少动效”。",
+                "面板顶部固定，增加内容时只向下展开；底部入口全部恢复直接显示，不再收进“更多”。",
+                "发布版本更新为 1.1.4 (39)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.3",
             version: "1.1.3",
