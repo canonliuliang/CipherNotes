@@ -1,29 +1,21 @@
-# CipherNotes 1.1.0 - 内置媒体与大文件体验
+# CipherNotes 1.1.1 - 登录界面与窗口适配
 
 ## Summary
 
-CipherNotes 1.1.0 rebuilds the encrypted file-vault viewer and completes a broad performance, storage-integrity, accessibility, and release-tooling pass.
+CipherNotes 1.1.1 refines the account entry experience so it remains calm, native, and fully reachable in compact macOS windows.
 
 ## Highlights
 
-- Views images, PDF files, text, audio, and video inside CipherNotes.
-- Streams audio and video from encrypted 4 MB chunks without plaintext temporary files or external applications.
-- Downsamples thumbnails off the main thread and bounds preview memory with LRU eviction.
-- Adds pause, resume, progress, cancellation, and background deletion behavior for large vault files.
-- Debounces note search and reuses an incremental normalized search index.
-- Keeps note autosave coalesced and skips unchanged encrypted writes.
-- Keeps a validated recovery copy beside `vault.json` and restores it if the primary metadata file is damaged.
-- Adds a SHA-256 manifest to new backups and validates it before restore.
-- Stores versioned password-derivation settings per account for future KDF upgrades.
-- Retains progressive login throttling and adds encrypted security-audit export.
-- Improves VoiceOver labels and keyboard-accessible media controls.
-- Adds automated 860x620 rendering checks across light, dark, blue-accent, and mint-accent combinations.
-- Updates official GitHub Actions to current runtimes, removing the Node.js 20 deprecation path.
+- Rebuilds the login, registration, and recovery entry layout around adaptive vertical space instead of a fixed-height form.
+- Keeps account entry centered at normal window sizes and makes the full form safely scrollable at compact heights.
+- Removes the empty fixed form area that made account-mode changes feel visually unstable.
+- Consolidates bottom-window tools into native macOS menus, preserving every action without horizontal overflow.
+- Retains the automated 860x620 light/dark/accent rendering check for the minimum supported window.
 
 ## Downloads
 
-- `密笺-1.1.0.pkg`: recommended public installer.
-- `密笺-1.1.0.zip`: portable application archive.
+- `密笺-1.1.1.pkg`: recommended public installer.
+- `密笺-1.1.1.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -38,4 +30,4 @@ Requires macOS 14 or later.
 
 ## Publishing
 
-Push tag `v1.1.0` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.1` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.

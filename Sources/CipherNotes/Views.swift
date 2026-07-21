@@ -170,49 +170,7 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 14) {
-                Spacer()
-                Menu {
-                    Picker("外观", selection: $appAppearanceRawValue) {
-                        ForEach(AppAppearance.allCases) { appearance in
-                            Text(appearance.label).tag(appearance.rawValue)
-                        }
-                    }
-                    Toggle("减少动效", isOn: $reduceMotion)
-                } label: {
-                    Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
-                }
-                if !store.accounts.isEmpty {
-                    Button {
-                        showingSecurityCenter = true
-                    } label: {
-                        Label("安全中心", systemImage: "shield.checkered")
-                    }
-                    .disabled(store.state != .unlocked)
-                    Button {
-                        showingUserManagement = true
-                    } label: {
-                        Label("账户与安全", systemImage: "person.2.badge.gearshape")
-                    }
-                }
-                Button {
-                    showingChangelog = true
-                } label: {
-                    Label("更新日志", systemImage: "sparkles")
-                }
-                Button {
-                    showingLegalDisclosure = true
-                } label: {
-                    Label("法律声明", systemImage: "doc.text.magnifyingglass")
-                }
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider().opacity(0.55) }
+            rootFooter
         }
         .safeAreaInset(edge: .top, spacing: 0) {
         }
@@ -266,6 +224,57 @@ struct RootView: View {
             showingLegalDisclosure = true
         }
     }
+
+    private var rootFooter: some View {
+        HStack(spacing: 10) {
+            Spacer(minLength: 0)
+            Menu {
+                Picker("外观", selection: $appAppearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance.rawValue)
+                    }
+                }
+                Toggle("减少动效", isOn: $reduceMotion)
+            } label: {
+                Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
+            }
+            Menu {
+                if !store.accounts.isEmpty {
+                    Button {
+                        showingSecurityCenter = true
+                    } label: {
+                        Label("安全中心", systemImage: "shield.checkered")
+                    }
+                    .disabled(store.state != .unlocked)
+                    Button {
+                        showingUserManagement = true
+                    } label: {
+                        Label("账户与安全", systemImage: "person.2.badge.gearshape")
+                    }
+                    Divider()
+                }
+                Button {
+                    showingChangelog = true
+                } label: {
+                    Label("更新日志", systemImage: "sparkles")
+                }
+                Button {
+                    showingLegalDisclosure = true
+                } label: {
+                    Label("法律声明", systemImage: "doc.text.magnifyingglass")
+                }
+            } label: {
+                Label("更多", systemImage: "ellipsis.circle")
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 9)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider().opacity(0.55) }
+    }
 }
 
 private struct PrivacyShieldOverlay: View {
@@ -315,11 +324,12 @@ struct AppBackground: View {
 struct GlassPanel: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     var radius: CGFloat = 18
+    var padding: CGFloat = 26
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
-            .padding(26)
+            .padding(padding)
             .background(.regularMaterial, in: shape)
             .overlay(alignment: .top) {
                 shape
@@ -436,8 +446,8 @@ struct MacHoverLift: ViewModifier {
 }
 
 extension View {
-    func glassPanel(radius: CGFloat = 18) -> some View {
-        modifier(GlassPanel(radius: radius))
+    func glassPanel(radius: CGFloat = 18, padding: CGFloat = 26) -> some View {
+        modifier(GlassPanel(radius: radius, padding: padding))
     }
 
     func macHoverLift(disabled: Bool = false) -> some View {
@@ -735,39 +745,24 @@ struct UnlockView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
-            BrandHeader()
-            VStack(spacing: 14) {
-                Picker("", selection: $mode) {
-                    ForEach(AuthMode.allCases) { item in
-                        Text(item.rawValue).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.regular)
-                .frame(height: 30)
+        GeometryReader { proxy in
+            let compact = proxy.size.height < 650
+            ScrollView(.vertical, showsIndicators: compact) {
+                VStack(spacing: compact ? 14 : 22) {
+                    BrandHeader(compact: compact)
+                        .accessibilityAddTraits(.isHeader)
 
-                ZStack {
-                    if mode == .login {
-                        loginForm
-                            .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
-                    } else if mode == .register {
-                        registerForm
-                            .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
-                    } else {
-                        recoveryForm
-                            .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
-                    }
+                    authenticationPanel(compact: compact)
+
+                    Text("本地账户 · 各自加密 · 无云端")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: mode)
-                .frame(minHeight: 300, alignment: .top)
-                ErrorText(store.errorMessage)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                .padding(.horizontal, compact ? 20 : 40)
+                .padding(.vertical, compact ? 18 : 32)
             }
-            .glassPanel()
-            .frame(width: 420)
-            Text("平等本地账户 · 各自加密 · 无云端").font(.caption).foregroundStyle(.secondary)
         }
-        .padding(40)
         .onAppear {
             mode = store.userCount == 0 ? .register : .login
             selectedAccountID = selectedAccountID ?? store.accounts.first?.id
@@ -784,6 +779,39 @@ struct UnlockView: View {
         .onChange(of: selectedAccountID) { _, _ in
             password = ""
         }
+    }
+
+    private func authenticationPanel(compact: Bool) -> some View {
+        VStack(spacing: compact ? 12 : 14) {
+            Picker("账户操作", selection: $mode) {
+                ForEach(AuthMode.allCases) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.regular)
+            .accessibilityLabel("账户操作")
+
+            Group {
+                switch mode {
+                case .login:
+                    loginForm
+                case .register:
+                    registerForm
+                case .recover:
+                    recoveryForm
+                }
+            }
+            .transition(MotionStyle.slideTransition(reduceMotion: reduceMotion, edge: .trailing))
+            .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: mode)
+
+            if let error = store.errorMessage {
+                ErrorText(error)
+            }
+        }
+        .frame(maxWidth: 420)
+        .glassPanel(radius: 20, padding: compact ? 18 : 24)
+        .frame(maxWidth: 468)
     }
 
     private var loginForm: some View {
@@ -3721,6 +3749,19 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.1",
+            version: "1.1.1",
+            title: "登录界面与窗口适配",
+            dateText: "2026-07-21",
+            items: [
+                "登录、注册和恢复页改为按窗口高度自适应，不再依赖固定表单高度。",
+                "普通窗口保持居中；窗口较矮时完整表单可自然滚动，字段和确认按钮不会被底部遮住。",
+                "移除登录页切换时多余的固定留白，切换账户操作时的视觉重心更稳定。",
+                "底部入口收进原生 macOS 菜单，外观、账户与安全、更新日志和法律声明仍完整保留，但不会横向溢出。",
+                "发布版本更新为 1.1.1 (36)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.0",
             version: "1.1.0",
