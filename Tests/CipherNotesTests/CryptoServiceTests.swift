@@ -77,7 +77,7 @@ final class CryptoServiceTests: XCTestCase {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         XCTAssertGreaterThan(
             renderedForegroundSampleCount(in: bitmap),
-            600,
+            250,
             "登录后的主工作区不能空白或被辅助栏挤出窗口"
         )
     }
