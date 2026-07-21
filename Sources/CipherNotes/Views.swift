@@ -216,11 +216,6 @@ struct RootView: View {
         }
         .frame(minWidth: 860, minHeight: 620)
         .preferredColorScheme(appAppearance.colorScheme)
-        .onAppear {
-            DispatchQueue.main.async {
-                NSApplication.shared.windows.forEach { $0.sharingType = .none }
-            }
-        }
         .onChange(of: scenePhase) { _, newPhase in
             guard store.state == .unlocked, store.currentAccountAdvancedDataProtectionEnabled else { return }
             if newPhase != .active {
@@ -2745,7 +2740,7 @@ struct LegalDisclosureView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("密笺是本地加密记事工具，不提供法律、财务、医疗、合规或取证建议。你在应用中保存、导入、导出或共享的内容由你自行负责。")
                     Text("应用不上传笔记、不提供云端恢复，也不保存明文用户密码、恢复码或共享密码。为方便登录页选择账户，账户显示名会保存在本机保险库文件中。忘记用户密码且没有恢复码时，相关笔记可能无法恢复。")
-                    Text("最高保护模式会减少应用内预览、导出、复制、外部打开和失焦暴露，但它不是法律豁免、反取证承诺或对抗恶意软件的保证。拥有系统权限的恶意程序、屏幕录制、键盘记录、内存取证、备份软件或系统级日志仍可能造成泄露。")
+                    Text("最高保护模式会减少应用内预览、导出、复制、外部打开和失焦暴露，但它不是法律豁免、反取证承诺或对抗恶意软件的保证。应用允许用户通过 macOS 截屏、录屏或会议共享捕获当前可见窗口；拥有系统权限的恶意程序、键盘记录、内存取证、备份软件或系统级日志也仍可能造成泄露。")
                     Text("虚假密码和虚假空间用于降低被旁观或被迫临时解锁时的暴露风险；如果你选择销毁本地数据，该操作不可撤销。请自行确认这种设置是否符合你的法律义务、组织规定和实际风险。")
                     Text("在其他 App 中打开、导出或共享文件可能留下最近项目、缓存、缩略图、下载记录或收件记录。密笺只能控制自身行为，不能保证第三方 App 或操作系统组件不留下痕迹。")
                     Text("共享文件采用你输入的共享密码加密；如果共享密码过短、重复使用或通过不安全渠道发送，可能降低保护强度。请只共享你有权共享的内容。")
@@ -3655,6 +3650,19 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.7",
+            version: "1.1.7",
+            title: "允许系统截屏",
+            dateText: "2026-07-21",
+            items: [
+                "移除窗口的系统级截屏与录屏阻止标记，可正常使用 macOS 截图、录屏和会议共享。",
+                "最高保护模式继续保留失焦遮罩、自动锁定和敏感预览缓存清理。",
+                "法律与隐私声明明确：屏幕捕获由用户与 macOS 控制，应用不会承诺阻止取证或录屏。",
+                "1.0.8 主界面与当前登录页保持不变。",
+                "发布版本更新为 1.1.7 (42)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.6",
             version: "1.1.6",
