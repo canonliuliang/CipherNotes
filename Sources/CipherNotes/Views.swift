@@ -2557,7 +2557,7 @@ private struct VaultImagePreview: View {
         }
         .task(id: resource.id) {
             let reader = resource.reader
-            let result = await Task.detached(priority: .userInitiated) { () -> Result<NSImage, Error> in
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<SendableNSImage, Error> in
                 do {
                     let data = try reader.readAll(maximumBytes: 256 * 1024 * 1024)
                     guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
@@ -2572,13 +2572,13 @@ private struct VaultImagePreview: View {
                     guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
                         throw VaultError.corruptVault
                     }
-                    return .success(NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height)))
+                    return .success(SendableNSImage(NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))))
                 } catch {
                     return .failure(error)
                 }
             }.value
             switch result {
-            case .success(let image): self.image = image
+            case .success(let imageBox): self.image = imageBox.image
             case .failure(let error): errorText = error.localizedDescription
             }
         }

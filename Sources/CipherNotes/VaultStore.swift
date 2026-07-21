@@ -1271,7 +1271,7 @@ final class VaultStore: ObservableObject {
               let vaultKey,
               let currentUserID else { return nil }
         let url = attachmentURL(for: itemID, userID: currentUserID)
-        let image = await Task.detached(priority: .utility) {
+        let imageBox = await Task.detached(priority: .utility) {
             do {
                 let reader = try EncryptedAttachmentReader(
                     url: url,
@@ -1281,11 +1281,12 @@ final class VaultStore: ObservableObject {
                     encryptedChunkOverhead: Self.attachmentChunkOverhead
                 )
                 let data = try reader.readAll(maximumBytes: Self.maxPreviewSourceBytes)
-                return Self.downsampledImage(data: data, maximumPixelSize: 560)
+                return Self.downsampledImage(data: data, maximumPixelSize: 560).map(SendableNSImage.init)
             } catch {
                 return nil
             }
         }.value
+        let image = imageBox?.image
         if let image { insertPreviewImage(image, for: itemID) }
         return image
     }

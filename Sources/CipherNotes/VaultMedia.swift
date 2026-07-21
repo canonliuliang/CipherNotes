@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
@@ -8,6 +9,14 @@ struct VaultMediaResource: Identifiable, @unchecked Sendable {
     let contentType: String?
     let byteCount: Int
     let reader: EncryptedAttachmentReader
+}
+
+final class SendableNSImage: @unchecked Sendable {
+    let image: NSImage
+
+    init(_ image: NSImage) {
+        self.image = image
+    }
 }
 
 final class EncryptedAttachmentReader: @unchecked Sendable {
