@@ -1,5 +1,4 @@
 import AppKit
-import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -37,6 +36,24 @@ private func requestDangerAuthorization(title: String, message: String, confirma
     return (passwordField.stringValue, confirmationField.stringValue)
 }
 
+@MainActor
+private func requestPasswordAuthorization(title: String, message: String, actionTitle: String) -> String? {
+    let passwordField = NSSecureTextField()
+    passwordField.placeholderString = "当前账户密码"
+    passwordField.frame.size.width = 320
+
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = message
+    alert.alertStyle = .critical
+    alert.accessoryView = passwordField
+    alert.addButton(withTitle: actionTitle)
+    alert.addButton(withTitle: "取消")
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let password = passwordField.stringValue
+    return password.isEmpty ? nil : password
+}
+
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
     case light
@@ -62,7 +79,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 }
 
 
-private enum MotionStyle {
+enum MotionStyle {
     static func transition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.992)).combined(with: .offset(y: 8))
     }
@@ -122,6 +139,37 @@ enum VaultFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct DeepAccessSequence {
+    private(set) var nextIndex = 0
+    private var lastTapAt: Date?
+
+    mutating func register(index: Int, enabled: Bool, now: Date = .now) -> Bool {
+        guard enabled else {
+            reset()
+            return false
+        }
+        if let lastTapAt, now.timeIntervalSince(lastTapAt) > 4 {
+            reset()
+        }
+        lastTapAt = now
+        if index == nextIndex {
+            nextIndex += 1
+            if nextIndex == 4 {
+                reset()
+                return true
+            }
+        } else {
+            nextIndex = index == 0 ? 1 : 0
+        }
+        return false
+    }
+
+    mutating func reset() {
+        nextIndex = 0
+        lastTapAt = nil
+    }
+}
+
 struct RootView: View {
     @EnvironmentObject private var store: VaultStore
     @Environment(\.scenePhase) private var scenePhase
@@ -139,80 +187,29 @@ struct RootView: View {
     }
 
     var body: some View {
-        ZStack {
-            AppBackground()
-            Group {
-                if !hasSeenIntro {
-                    IntroView {
-                        hasSeenIntro = true
+        VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                AppBackground()
+                rootContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .id(hasSeenIntro ? "\(store.state)" : "intro")
+                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+                    .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: store.state)
+                    .padding(10)
+                if privacyShieldActive && store.state == .unlocked && store.currentAccountAdvancedDataProtectionEnabled {
+                    PrivacyShieldOverlay {
+                        privacyShieldActive = false
                     }
-                } else {
-                    switch store.state {
-                    case .needsAdminSetup: UnlockView()
-                    case .needsMigration: MigrationView()
-                    case .locked: UnlockView()
-                    case .unlocked: NotesView()
-                    }
+                    .transition(.opacity)
+                    .zIndex(10)
                 }
             }
-            .id(hasSeenIntro ? "\(store.state)" : "intro")
-            .transition(MotionStyle.transition(reduceMotion: reduceMotion))
-            .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: store.state)
-            .padding(10)
-            if privacyShieldActive && store.state == .unlocked && store.currentAccountAdvancedDataProtectionEnabled {
-                PrivacyShieldOverlay {
-                    privacyShieldActive = false
-                }
-                .transition(.opacity)
-                .zIndex(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+
+            if store.state == .unlocked {
+                rootFooter
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 14) {
-                Spacer()
-                Menu {
-                    Picker("外观", selection: $appAppearanceRawValue) {
-                        ForEach(AppAppearance.allCases) { appearance in
-                            Text(appearance.label).tag(appearance.rawValue)
-                        }
-                    }
-                    Toggle("减少动效", isOn: $reduceMotion)
-                } label: {
-                    Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
-                }
-                if !store.accounts.isEmpty {
-                    Button {
-                        showingSecurityCenter = true
-                    } label: {
-                        Label("安全中心", systemImage: "shield.checkered")
-                    }
-                    .disabled(store.state != .unlocked)
-                    Button {
-                        showingUserManagement = true
-                    } label: {
-                        Label("账户与安全", systemImage: "person.2.badge.gearshape")
-                    }
-                }
-                Button {
-                    showingChangelog = true
-                } label: {
-                    Label("更新日志", systemImage: "sparkles")
-                }
-                Button {
-                    showingLegalDisclosure = true
-                } label: {
-                    Label("法律声明", systemImage: "doc.text.magnifyingglass")
-                }
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider().opacity(0.55) }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
         }
         .frame(minWidth: 860, minHeight: 620)
         .preferredColorScheme(appAppearance.colorScheme)
@@ -258,6 +255,68 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowLegalDisclosure)) { _ in
             showingLegalDisclosure = true
         }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        if !hasSeenIntro {
+            IntroView {
+                hasSeenIntro = true
+            }
+        } else {
+            switch store.state {
+            case .needsAdminSetup: UnlockView()
+            case .needsMigration: MigrationView()
+            case .locked: UnlockView()
+            case .unlocked: NotesView()
+            }
+        }
+    }
+
+    private var rootFooter: some View {
+        HStack(spacing: 14) {
+            Spacer()
+            Menu {
+                Picker("外观", selection: $appAppearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance.rawValue)
+                    }
+                }
+                Toggle("减少动效", isOn: $reduceMotion)
+            } label: {
+                Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
+            }
+            if !store.accounts.isEmpty {
+                Button {
+                    showingSecurityCenter = true
+                } label: {
+                    Label("安全中心", systemImage: "shield.checkered")
+                }
+                .disabled(store.state != .unlocked)
+                Button {
+                    showingUserManagement = true
+                } label: {
+                    Label("账户与安全", systemImage: "person.2.badge.gearshape")
+                }
+            }
+            Button {
+                showingChangelog = true
+            } label: {
+                Label("更新日志", systemImage: "sparkles")
+            }
+            Button {
+                showingLegalDisclosure = true
+            } label: {
+                Label("法律声明", systemImage: "doc.text.magnifyingglass")
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider().opacity(0.55) }
     }
 }
 
@@ -344,14 +403,35 @@ struct NativeGlassSurface: ViewModifier {
 }
 
 struct AppleProminentButtonStyle: ButtonStyle {
+    @AppStorage("reduceMotion") private var reduceMotion = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .buttonStyle(.borderedProminent)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(minHeight: 32)
+            .background(
+                Color.accentColor.opacity(configuration.isPressed ? 0.78 : 1),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(.white.opacity(configuration.isPressed ? 0.16 : 0.28), lineWidth: 1)
+            }
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.975)
+            .brightness(configuration.isPressed ? -0.035 : 0)
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.08) : .spring(response: 0.20, dampingFraction: 0.76),
+                value: configuration.isPressed
+            )
     }
 }
 
 struct ClearButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("reduceMotion") private var reduceMotion = false
     var prominence: Prominence = .standard
 
     enum Prominence {
@@ -375,6 +455,12 @@ struct ClearButtonStyle: ButtonStyle {
                 shape.stroke(borderColor, lineWidth: 1)
             }
             .contentShape(shape)
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.975)
+            .brightness(configuration.isPressed ? -0.025 : 0)
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.08) : .spring(response: 0.20, dampingFraction: 0.76),
+                value: configuration.isPressed
+            )
     }
 
     private var foregroundColor: Color {
@@ -422,9 +508,9 @@ struct MacHoverLift: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(disabled || !hovered ? 1 : 1.006)
-            .shadow(color: .black.opacity(disabled || !hovered ? 0 : 0.10), radius: 8, y: 3)
-            .animation(.easeOut(duration: 0.16), value: hovered)
+            .scaleEffect(disabled || !hovered ? 1 : 1.012)
+            .shadow(color: .black.opacity(disabled || !hovered ? 0 : 0.11), radius: 10, y: 4)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: hovered)
             .onHover { hovered = $0 }
     }
 }
@@ -654,14 +740,6 @@ private enum AuthMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private struct AuthFormHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 1
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private struct PasswordStrengthIndicator: View {
     let password: String
 
@@ -719,13 +797,12 @@ private struct PasswordStrengthIndicator: View {
 struct UnlockView: View {
     @EnvironmentObject private var store: VaultStore
     @AppStorage("reduceMotion") private var reduceMotion = false
-    @State private var mode: AuthMode = .login
+    @State private var mode: AuthMode?
     @State private var username = ""
     @State private var password = ""
     @State private var confirmation = ""
     @State private var recoveryCode = ""
     @State private var selectedAccountID: UUID?
-    @State private var formHeight: CGFloat = 240
     @FocusState private var focused: Bool
 
     private var selectedAccount: AccountSummary? {
@@ -737,23 +814,44 @@ struct UnlockView: View {
         !store.accounts.isEmpty || !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var body: some View {
-        VStack(spacing: 18) {
-            BrandHeader()
-                .accessibilityAddTraits(.isHeader)
+    private var activeMode: AuthMode {
+        mode ?? (store.userCount == 0 ? .register : .login)
+    }
 
-            authenticationPanel
-
-            Text("本地账户 · 各自加密 · 无云端")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var authenticationFormHeight: CGFloat {
+        let errorHeight: CGFloat = store.errorMessage == nil ? 0 : 38
+        switch activeMode {
+        case .login:
+            return 152 + errorHeight
+        case .register:
+            return (store.userCount == 0 ? 250 : 220) + errorHeight
+        case .recover:
+            return 290 + errorHeight
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.horizontal, 24)
-        .padding(.top, 32)
-        .padding(.bottom, 20)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 20) {
+                    BrandHeader()
+                        .accessibilityAddTraits(.isHeader)
+
+                    authenticationPanel
+
+                    Label("本地账户 · 各自加密 · 无云端", systemImage: "checkmark.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: max(560, proxy.size.height), alignment: .center)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
+            }
+            .scrollIndicators(.hidden)
+        }
         .onAppear {
-            mode = store.userCount == 0 ? .register : .login
+            mode = activeMode
             selectedAccountID = selectedAccountID ?? store.accounts.first?.id
             focused = true
         }
@@ -771,20 +869,25 @@ struct UnlockView: View {
     }
 
     private var authenticationPanel: some View {
-        VStack(spacing: 14) {
-            Picker("账户操作", selection: $mode) {
+        VStack(spacing: 16) {
+            Picker("账户操作", selection: Binding(
+                get: { activeMode },
+                set: { mode = $0 }
+            )) {
                 ForEach(AuthMode.allCases) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
+            .frame(width: 420)
             .pickerStyle(.segmented)
             .controlSize(.regular)
+            .labelsHidden()
             .accessibilityLabel("账户操作")
 
             ZStack(alignment: .top) {
                 VStack(spacing: 14) {
                     activeAuthenticationForm
-                        .id(mode)
+                        .id(activeMode)
                         .transition(authFormTransition)
 
                     if let error = store.errorMessage {
@@ -793,35 +896,20 @@ struct UnlockView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .fixedSize(horizontal: false, vertical: true)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: AuthFormHeightKey.self, value: proxy.size.height)
-                    }
-                }
             }
-            .frame(height: formHeight, alignment: .top)
+            .frame(height: authenticationFormHeight, alignment: .top)
             .clipped()
         }
-        .frame(maxWidth: 420)
-        .glassPanel(radius: 20, padding: 22)
-        .frame(maxWidth: 468)
-        .onPreferenceChange(AuthFormHeightKey.self) { height in
-            guard height > 1, abs(height - formHeight) > 0.5 else { return }
-            if reduceMotion {
-                formHeight = height
-            } else {
-                withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
-                    formHeight = height
-                }
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: mode)
+        .frame(width: 440)
+        .controlSize(.large)
+        .glassPanel(radius: 20, padding: 20)
+        .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.88), value: authenticationFormHeight)
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.90), value: activeMode)
     }
 
     @ViewBuilder
     private var activeAuthenticationForm: some View {
-        switch mode {
+        switch activeMode {
         case .login:
             loginForm
         case .register:
@@ -847,42 +935,57 @@ struct UnlockView: View {
                     .textContentType(.username)
                     .focused($focused)
             } else {
-                Picker("选择账户", selection: Binding(
-                    get: { selectedAccountID ?? store.accounts.first?.id },
-                    set: { selectedAccountID = $0 }
-                )) {
-                    ForEach(store.accounts) { account in
-                        Text(account.displayName).tag(Optional(account.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let selectedAccount {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "person.crop.circle")
+                ZStack {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.title3)
                             .foregroundStyle(.secondary)
-                        Text(selectedAccount.displayName)
-                            .font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selectedAccount?.displayName ?? "选择账户")
+                                .font(.callout.weight(.semibold))
+                            Text("本机加密账户")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Text("密码登录")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
-                    Text("本版本只使用账户密码和恢复码，不再使用设备级生物识别解锁。")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .frame(width: 420, height: 46)
+                    .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Menu {
+                        ForEach(store.accounts) { account in
+                            Button {
+                                selectedAccountID = account.id
+                            } label: {
+                                if account.id == selectedAccountID {
+                                    Label(account.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(account.displayName)
+                                }
+                            }
+                        }
+                    } label: {
+                        Color.clear
+                            .frame(width: 420, height: 46)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .accessibilityLabel("选择账户")
                 }
-                .padding(10)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             SecureField("用户密码", text: $password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(unlock)
-            Button("登录", action: unlock)
-                .buttonStyle(AppleProminentButtonStyle()).controlSize(.large)
-                .frame(maxWidth: .infinity)
+            Button(action: unlock) {
+                Label("登录", systemImage: "arrow.right.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+                .buttonStyle(AppleProminentButtonStyle())
                 .disabled(!canSubmitLogin)
                 .keyboardShortcut(.defaultAction)
             if store.userCount == 0 {
@@ -909,9 +1012,11 @@ struct UnlockView: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(register)
             PasswordStrengthIndicator(password: password)
-            Button("注册并进入", action: register)
-                .buttonStyle(AppleProminentButtonStyle()).controlSize(.large)
-                .frame(maxWidth: .infinity)
+            Button(action: register) {
+                Label("注册并进入", systemImage: "person.crop.circle.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+                .buttonStyle(AppleProminentButtonStyle())
                 .keyboardShortcut(.defaultAction)
             Text("每个本地账户都由自己的密码和恢复码保护。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -932,9 +1037,11 @@ struct UnlockView: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(resetPassword)
             PasswordStrengthIndicator(password: password)
-            Button("用恢复码重设密码", action: resetPassword)
-                .buttonStyle(.borderedProminent).controlSize(.large)
-                .frame(maxWidth: .infinity)
+            Button(action: resetPassword) {
+                Label("用恢复码重设密码", systemImage: "key.viewfinder")
+                    .frame(maxWidth: .infinity)
+            }
+                .buttonStyle(AppleProminentButtonStyle())
                 .disabled(recoveryCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .keyboardShortcut(.defaultAction)
             Text("重设成功后会生成新的恢复码，旧恢复码立即失效。")
@@ -950,7 +1057,6 @@ struct UnlockView: View {
             succeeded = store.unlock(username: username, password: password)
         }
         if succeeded {
-            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             password = ""
         }
     }
@@ -962,7 +1068,6 @@ struct UnlockView: View {
             confirmation: confirmation
         )
         if store.state == .unlocked {
-            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             password = ""
             confirmation = ""
         }
@@ -996,6 +1101,8 @@ struct NotesView: View {
     @State private var importPassword = ""
     @State private var pendingImportData: Data?
     @State private var workspaceMode: WorkspaceMode = .notes
+    @State private var deepAccessSequence = DeepAccessSequence()
+    @State private var showingDeepAccessAuthentication = false
 
     private var filteredNotes: [Note] {
         let baseNotes: [Note]
@@ -1064,7 +1171,7 @@ struct NotesView: View {
     }
 
     private var currentAccountBadgeText: String {
-        "本地账户 · 纯免费"
+        store.isSuperPrivateSession ? "超级隐私空间 · 独立加密" : "本地账户 · 纯免费"
     }
 
     var body: some View {
@@ -1083,18 +1190,20 @@ struct NotesView: View {
             ZStack {
                 if workspaceMode == .notes {
                     notesBody
+                        .transition(.opacity)
                 } else {
                     VaultView()
                         .environmentObject(store)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // The native segmented control supplies selection feedback. Avoid
-            // sliding two large split views, which made headers flash on switching.
-            .transaction { transaction in
-                transaction.animation = nil
-            }
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.08) : .easeInOut(duration: 0.18),
+                value: workspaceMode
+            )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar(content: workspaceToolbar)
         .toolbarBackground(.bar, for: .windowToolbar)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesAddAttachments)) { _ in
@@ -1102,6 +1211,23 @@ struct NotesView: View {
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .cipherNotesOpenVaultImporter, object: nil)
             }
+        }
+        .onChange(of: store.currentAccountAdvancedDataProtectionEnabled) { _, enabled in
+            if !enabled {
+                deepAccessSequence.reset()
+                showingDeepAccessAuthentication = false
+            }
+        }
+        .sheet(isPresented: $showingDeepAccessAuthentication) {
+            DeepAccessAuthenticationView { password in
+                guard store.enterSuperPrivateSpace(password: password) else { return false }
+                selection = nil
+                workspaceMode = .notes
+                deepAccessSequence.reset()
+                showingDeepAccessAuthentication = false
+                return true
+            }
+            .environmentObject(store)
         }
     }
 
@@ -1268,8 +1394,12 @@ struct NotesView: View {
 
     private var protectionStatusBadge: some View {
         Label(
-            store.currentAccountAdvancedDataProtectionEnabled ? "最高保护模式已开启" : "标准保护模式",
-            systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
+            store.isSuperPrivateSession
+                ? "超级隐私空间 · 最高保护"
+                : (store.currentAccountAdvancedDataProtectionEnabled ? "最高保护模式已开启" : "标准保护模式"),
+            systemImage: store.isSuperPrivateSession
+                ? "lock.shield.fill"
+                : (store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield")
         )
         .font(.caption)
         .foregroundStyle(store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
@@ -1279,28 +1409,32 @@ struct NotesView: View {
     private var mainStatusStrip: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
             mainStatusPill(
-                "当前账户",
-                value: store.signedInUsername ?? "未登录",
-                systemImage: "person.crop.circle.fill",
-                tint: .accentColor
+                store.isSuperPrivateSession ? "隔离会话" : "当前账户",
+                value: store.isSuperPrivateSession ? "超级隐私空间" : (store.signedInUsername ?? "未登录"),
+                systemImage: store.isSuperPrivateSession ? "lock.shield.fill" : "person.crop.circle.fill",
+                tint: store.isSuperPrivateSession ? .mint : .accentColor,
+                sequenceIndex: 0
             )
             mainStatusPill(
                 "保护模式",
                 value: store.currentAccountAdvancedDataProtectionEnabled ? "最高保护" : "标准保护",
                 systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield",
-                tint: store.currentAccountAdvancedDataProtectionEnabled ? .accentColor : .secondary
+                tint: store.currentAccountAdvancedDataProtectionEnabled ? .accentColor : .secondary,
+                sequenceIndex: 1
             )
             mainStatusPill(
                 "自动锁定",
                 value: "\(store.autoLockMinutes) 分钟",
                 systemImage: "timer",
-                tint: .secondary
+                tint: .secondary,
+                sequenceIndex: 2
             )
             mainStatusPill(
                 "保险柜",
                 value: "\(store.vaultItems.count) 个文件",
                 systemImage: "lock.rectangle.stack.fill",
-                tint: .secondary
+                tint: .secondary,
+                sequenceIndex: 3
             )
         }
     }
@@ -1316,11 +1450,18 @@ struct NotesView: View {
         return "新建后会自动保存在当前本地账户的加密保险库里。"
     }
 
-    private func mainStatusPill(_ title: String, value: String, systemImage: String, tint: Color) -> some View {
+    private func mainStatusPill(
+        _ title: String,
+        value: String,
+        systemImage: String,
+        tint: Color,
+        sequenceIndex: Int
+    ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
                 .foregroundStyle(tint)
                 .frame(width: 18)
+                .contentTransition(.symbolEffect(.replace))
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
                     .font(.caption.weight(.semibold))
@@ -1334,6 +1475,15 @@ struct NotesView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if deepAccessSequence.register(
+                index: sequenceIndex,
+                enabled: store.currentAccountAdvancedDataProtectionEnabled && !store.isSuperPrivateSession
+            ) {
+                showingDeepAccessAuthentication = true
+            }
+        }
     }
 
     private func delete(_ id: UUID) {
@@ -1361,7 +1511,7 @@ struct NotesView: View {
             Button {
                 store.lock()
             } label: {
-                Label("锁定", systemImage: "lock.fill")
+                Label(store.isSuperPrivateSession ? "退出并锁定" : "锁定", systemImage: "lock.fill")
             }
             .keyboardShortcut("l", modifiers: .command)
         }
@@ -1675,6 +1825,66 @@ struct NotesView: View {
     }
 }
 
+private struct DeepAccessAuthenticationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+    @State private var authenticationFailed = false
+    let onAuthenticate: (String) -> Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.title2)
+                    .foregroundStyle(.orange)
+                    .symbolEffect(.bounce, value: authenticationFailed)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("验证超级隐私空间")
+                        .font(.title3.bold())
+                    Text("此入口只属于当前账户")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("请输入当前账户密码。进入后普通空间会从当前会话内存中清除，笔记和保险柜使用独立的加密数据区。退出时必须重新登录。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SecureField("当前账户密码", text: $password)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(authenticate)
+
+            if authenticationFailed {
+                Label("密码不正确", systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("验证并进入", action: authenticate)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(password.isEmpty)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+    }
+
+    private func authenticate() {
+        authenticationFailed = !onAuthenticate(password)
+        if authenticationFailed {
+            password = ""
+            NSSound.beep()
+        }
+    }
+}
+
 struct NoteEditor: View {
     @EnvironmentObject private var store: VaultStore
     @AppStorage("markdownPreview") private var markdownPreview = false
@@ -1892,30 +2102,28 @@ struct VaultView: View {
     @State private var query = ""
     @State private var filter: VaultFilter = .all
     @State private var intakeActive = false
-    @State private var previousVaultCount = 0
     @State private var ceremonyMessage: String?
     @State private var ceremonyDismissTask: Task<Void, Never>?
+    @State private var dropTargeted = false
+    @State private var previewRequest: VaultPreviewRequest?
 
     private var filteredItems: [VaultAttachment] {
         let scoped = store.vaultItems.filter { item in
-            switch filter {
+            let kind = VaultFileKind(item)
+            return switch filter {
             case .all:
                 true
             case .images:
-                item.contentType?.hasPrefix("image/") == true
+                kind == .image
             case .documents:
-                item.contentType?.hasPrefix("text/") == true
-                || item.contentType == "application/pdf"
+                kind == .text
+                || kind == .pdf
                 || item.contentType?.contains("word") == true
                 || item.contentType?.contains("spreadsheet") == true
             case .media:
-                item.contentType?.hasPrefix("audio/") == true || item.contentType?.hasPrefix("video/") == true
+                kind == .audio || kind == .video
             case .other:
-                !(item.contentType?.hasPrefix("image/") == true)
-                && !(item.contentType?.hasPrefix("text/") == true)
-                && item.contentType != "application/pdf"
-                && !(item.contentType?.hasPrefix("audio/") == true)
-                && !(item.contentType?.hasPrefix("video/") == true)
+                kind == .unsupported
             }
         }
         let items = scoped.sorted { $0.createdAt > $1.createdAt }
@@ -1982,19 +2190,49 @@ struct VaultView: View {
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 14)], spacing: 14) {
                         ForEach(filteredItems) { item in
-                            VaultItemCard(item: item)
+                            VaultItemCard(item: item) { itemID in
+                                previewRequest = VaultPreviewRequest(itemID: itemID)
+                            }
                                 .environmentObject(store)
-                                .transition(MotionStyle.transition(reduceMotion: reduceMotion))
                                 .macHoverLift(disabled: reduceMotion)
                         }
                     }
-                    .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: filteredItems.map(\.id))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(24)
         }
         .scrollIndicators(.automatic)
+        .dropDestination(for: URL.self) { urls, _ in
+            importDroppedFiles(urls)
+        } isTargeted: { targeted in
+            withAnimation(MotionStyle.animation(reduceMotion: reduceMotion)) {
+                dropTargeted = targeted
+            }
+        }
+        .overlay {
+            if dropTargeted {
+                ZStack {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                    VStack(spacing: 12) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 42, weight: .medium))
+                            .foregroundStyle(.tint)
+                            .symbolEffect(.bounce, value: dropTargeted)
+                        Text("松开以移入保险柜")
+                            .font(.title2.bold())
+                        Text("文件会加密保存，成功后从原位置移除")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(28)
+                    .nativeGlassSurface(radius: 18)
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .bottom) {
             if let ceremonyMessage {
                 CeremonyToast(
@@ -2009,16 +2247,12 @@ struct VaultView: View {
         }
         .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: intakeActive)
         .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: ceremonyMessage)
-        .onAppear {
-            previousVaultCount = store.vaultItems.count
-        }
         .onChange(of: store.vaultItems.count) { oldValue, newValue in
             if newValue > oldValue {
                 let imported = newValue - oldValue
                 intakeActive = false
                 showCeremony(imported == 1 ? "加密完成" : "\(imported) 个文件加密完成")
             }
-            previousVaultCount = newValue
         }
         .onChange(of: store.errorMessage) { _, message in
             if message != nil {
@@ -2027,6 +2261,21 @@ struct VaultView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesOpenVaultImporter)) { _ in
             chooseVaultFiles()
+        }
+        .onDisappear {
+            ceremonyDismissTask?.cancel()
+        }
+        .overlay {
+            if let request = previewRequest {
+                VaultGalleryPreviewView(initialItemID: request.itemID) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                        previewRequest = nil
+                    }
+                }
+                .environmentObject(store)
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .alert("密笺", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("好") { store.errorMessage = nil }
@@ -2107,8 +2356,19 @@ struct VaultView: View {
         panel.prompt = "加密并删除原文件"
         guard panel.runModal() == .OK else { return }
         intakeActive = true
-        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         store.importFilesToVault(urls: panel.urls, deleteOriginals: true)
+    }
+
+    private func importDroppedFiles(_ urls: [URL]) -> Bool {
+        let files = urls.filter { url in
+            guard url.isFileURL else { return false }
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+            return values?.isRegularFile == true
+        }
+        guard !files.isEmpty else { return false }
+        intakeActive = true
+        store.importFilesToVault(urls: files, deleteOriginals: true)
+        return true
     }
 
     private var vaultImportQueue: some View {
@@ -2201,7 +2461,6 @@ struct VaultView: View {
     }
 
     private func showCeremony(_ message: String) {
-        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         ceremonyDismissTask?.cancel()
         ceremonyMessage = message
         ceremonyDismissTask = Task {
@@ -2216,8 +2475,8 @@ struct VaultView: View {
 struct VaultItemCard: View {
     @EnvironmentObject private var store: VaultStore
     let item: VaultAttachment
+    let onPreview: (UUID) -> Void
     @State private var preview: NSImage?
-    @State private var previewPayload: VaultPreviewPayload?
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
@@ -2247,6 +2506,13 @@ struct VaultItemCard: View {
                 }
             }
             .aspectRatio(1.55, contentMode: .fit)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .onTapGesture {
+                if canPreviewInternally {
+                    openInternalPreview()
+                }
+            }
+            .help(canPreviewInternally ? "单击在密笺内查看" : "此格式暂不支持内置查看")
             Text(protected ? "受保护文件" : item.fileName)
                 .font(.headline)
                 .lineLimit(2)
@@ -2266,10 +2532,10 @@ struct VaultItemCard: View {
                 Button {
                     openInternalPreview()
                 } label: {
-                    Label(protected ? "查看已禁用" : "查看", systemImage: protected ? "eye.slash" : "eye")
+                    Label(protected ? "安全查看" : "查看", systemImage: protected ? "eye.fill" : "eye")
                         .frame(maxWidth: .infinity)
                 }
-                .disabled(protected || !canPreviewInternally)
+                .disabled(!canPreviewInternally)
                 .buttonStyle(ClearButtonStyle(prominence: .primary))
 
                 Menu {
@@ -2303,83 +2569,31 @@ struct VaultItemCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .nativeGlassSurface(radius: 18)
         .task(id: item.id) {
-            if isImage && !store.currentAccountAdvancedDataProtectionEnabled {
+            if fileKind == .image && !store.currentAccountAdvancedDataProtectionEnabled {
                 preview = await store.previewVaultImage(itemID: item.id)
             } else {
                 preview = nil
             }
         }
-        .sheet(item: $previewPayload, onDismiss: {
-            previewPayload = nil
-            store.clearSensitivePreviewCaches()
-        }) { payload in
-            VaultInternalPreviewView(payload: payload)
-        }
     }
 
-    private var isImage: Bool { item.contentType?.hasPrefix("image/") == true }
-    private var isPDF: Bool { item.contentType == "application/pdf" || item.fileName.lowercased().hasSuffix(".pdf") }
-    private var isText: Bool {
-        item.contentType?.hasPrefix("text/") == true
-        || ["txt", "md", "markdown", "json", "csv", "log", "xml", "yaml", "yml"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
-    }
-    private var isAudio: Bool {
-        item.contentType?.hasPrefix("audio/") == true
-        || ["mp3", "m4a", "aac", "wav", "aiff", "caf"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
-    }
-    private var isVideo: Bool {
-        item.contentType?.hasPrefix("video/") == true
-        || ["mp4", "mov", "m4v"].contains(item.fileName.lowercased().split(separator: ".").last.map(String.init) ?? "")
-    }
-
-    private var canPreviewInternally: Bool {
-        !store.currentAccountAdvancedDataProtectionEnabled && (isImage || isPDF || isText || isAudio || isVideo)
-    }
+    private var fileKind: VaultFileKind { VaultFileKind(item) }
+    private var canPreviewInternally: Bool { fileKind.isPreviewable }
 
     private var systemImage: String {
-        if item.contentType == "application/pdf" { return "doc.richtext" }
-        if item.contentType?.hasPrefix("audio/") == true { return "waveform" }
-        if item.contentType?.hasPrefix("video/") == true { return "film" }
-        if item.contentType?.hasPrefix("text/") == true { return "doc.text" }
-        return "doc.fill"
+        fileKind.symbolName
     }
 
     private func openInternalPreview() {
-        if store.blockAdvancedProtectionAction("高级数据保护已开启，保险柜文件预览已阻止") { return }
         guard canPreviewInternally else {
             store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
             return
         }
-        if isVideo {
-            store.errorMessage = "视频内置查看器正在完善，当前版本不会交给外部 App 打开"
-            return
-        }
-        if isText && item.byteCount > 5 * 1024 * 1024 {
+        if fileKind == .text && item.byteCount > 5 * 1024 * 1024 {
             store.errorMessage = "文本文件超过 5MB，暂不在内置查看器中打开"
             return
         }
-        if isAudio && item.byteCount > 50 * 1024 * 1024 {
-            store.errorMessage = "音频文件超过 50MB，暂不在内置播放器中打开"
-            return
-        }
-        guard let data = store.internalVaultPreviewData(itemID: item.id) else { return }
-        if isImage, let image = NSImage(data: data) {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .image(image))
-            return
-        }
-        if isPDF {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .pdf(data))
-            return
-        }
-        if isText, let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .text(text))
-            return
-        }
-        if isAudio {
-            previewPayload = VaultPreviewPayload(title: item.fileName, kind: .audio(data))
-            return
-        }
-        store.errorMessage = "这个文件无法在内置查看器中打开"
+        onPreview(item.id)
     }
 
     private func exportItem() {
@@ -2400,250 +2614,6 @@ struct VaultItemCard: View {
     }
 }
 
-private struct VaultPreviewPayload: Identifiable {
-    let id = UUID()
-    let title: String
-    let kind: VaultPreviewKind
-}
-
-private enum VaultPreviewKind {
-    case image(NSImage)
-    case text(String)
-    case pdf(Data)
-    case audio(Data)
-}
-
-private struct VaultInternalPreviewView: View {
-    @Environment(\.dismiss) private var dismiss
-    let payload: VaultPreviewPayload
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: iconName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.mint)
-                    .frame(width: 30, height: 30)
-                    .background(.mint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(payload.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text("内置查看")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(ClearButtonStyle())
-                .help("关闭查看器")
-                .keyboardShortcut(.cancelAction)
-            }
-
-            Text("内容只在密笺内解密显示，关闭后会清理预览缓存。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(16)
-        .frame(minWidth: 420, idealWidth: 600, minHeight: 340, idealHeight: 460)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch payload.kind {
-        case .image(let image):
-            GeometryReader { proxy in
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: max(proxy.size.width - 24, 1), height: max(proxy.size.height - 24, 1))
-                        .padding(12)
-                }
-            }
-            .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .text(let text):
-            ScrollView {
-                Text(text)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-            }
-            .scrollIndicators(.automatic)
-            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .pdf(let data):
-            VaultPDFPreview(data: data)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        case .audio(let data):
-            VaultAudioPreview(data: data)
-        }
-    }
-
-    private var iconName: String {
-        switch payload.kind {
-        case .image: "photo"
-        case .text: "doc.text"
-        case .pdf: "doc.richtext"
-        case .audio: "waveform"
-        }
-    }
-}
-
-private struct VaultAudioPreview: View {
-    @StateObject private var player: InMemoryAudioPlayer
-
-    init(data: Data) {
-        _player = StateObject(wrappedValue: InMemoryAudioPlayer(data: data))
-    }
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.mint)
-                .symbolEffect(.pulse, value: player.isPlaying)
-            VStack(spacing: 8) {
-                Slider(
-                    value: Binding(
-                        get: { player.currentTime },
-                        set: { player.seek(to: $0) }
-                    ),
-                    in: 0...max(player.duration, 1)
-                )
-                HStack {
-                    Text(player.currentTime.formattedPlaybackTime)
-                    Spacer()
-                    Text(player.duration.formattedPlaybackTime)
-                }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-            }
-            Button {
-                player.toggle()
-            } label: {
-                Label(player.isPlaying ? "暂停" : "播放", systemImage: player.isPlaying ? "pause.fill" : "play.fill")
-            }
-            .buttonStyle(ClearButtonStyle(prominence: .primary))
-            Text("音频由内存数据直接播放，不写入临时文件，不调用外部播放器。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(28)
-        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onDisappear { player.stopAndClear() }
-    }
-}
-
-@MainActor
-private final class InMemoryAudioPlayer: ObservableObject {
-    @Published var isPlaying = false
-    @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-
-    private var sound: NSSound?
-    private var timer: Timer?
-
-    init(data: Data) {
-        let sound = NSSound(data: data)
-        self.sound = sound
-        duration = sound?.duration ?? 0
-    }
-
-    func toggle() {
-        guard let sound else { return }
-        if isPlaying {
-            sound.pause()
-            isPlaying = false
-            stopTimer()
-        } else {
-            sound.play()
-            isPlaying = true
-            startTimer()
-        }
-    }
-
-    func seek(to time: TimeInterval) {
-        sound?.currentTime = min(max(time, 0), duration)
-        currentTime = sound?.currentTime ?? 0
-    }
-
-    func stopAndClear() {
-        sound?.stop()
-        sound = nil
-        isPlaying = false
-        stopTimer()
-        currentTime = 0
-        duration = 0
-    }
-
-    private func startTimer() {
-        stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let sound = self.sound else { return }
-                self.currentTime = sound.currentTime
-                if !sound.isPlaying && self.isPlaying {
-                    self.isPlaying = false
-                    self.stopTimer()
-                }
-            }
-        }
-    }
-
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-}
-
-private extension TimeInterval {
-    var formattedPlaybackTime: String {
-        guard isFinite && self > 0 else { return "0:00" }
-        let totalSeconds = Int(self.rounded())
-        return "\(totalSeconds / 60):\(String(format: "%02d", totalSeconds % 60))"
-    }
-}
-
-private struct VaultPDFPreview: NSViewRepresentable {
-    let data: Data
-
-    func makeNSView(context: Context) -> PDFView {
-        let view = NoCopyPDFView()
-        view.autoScales = true
-        view.displayMode = .singlePageContinuous
-        view.displayDirection = .vertical
-        view.backgroundColor = .clear
-        return view
-    }
-
-    func updateNSView(_ nsView: PDFView, context: Context) {
-        nsView.document = PDFDocument(data: data)
-    }
-}
-
-private final class NoCopyPDFView: PDFView {
-    override var menu: NSMenu? {
-        get { nil }
-        set { }
-    }
-
-    override var acceptsFirstResponder: Bool { false }
-}
-
 struct ShareExportView: View {
     let noteTitle: String
     @Binding var password: String
@@ -2658,7 +2628,7 @@ struct ShareExportView: View {
                 .foregroundStyle(.secondary)
             SecureField("共享密码", text: $password)
                 .textFieldStyle(.roundedBorder)
-            Text("共享密码可以留空，也可以很短；越简单越容易被猜到。应用不会保存这个密码。")
+            Text("共享密码不能留空。请使用不重复的长密码，并通过与共享文件不同的渠道发送。应用不会保存它。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
@@ -2666,6 +2636,7 @@ struct ShareExportView: View {
                 Spacer()
                 Button("选择保存位置", action: onExport)
                     .buttonStyle(AppleProminentButtonStyle())
+                    .disabled(password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
@@ -2691,6 +2662,7 @@ struct ShareImportView: View {
                 Spacer()
                 Button("导入", action: onImport)
                     .buttonStyle(AppleProminentButtonStyle())
+                    .disabled(password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
@@ -2927,6 +2899,12 @@ struct SecurityCenterView: View {
                         HStack {
                             sectionTitle("安全日志", systemImage: "list.bullet.rectangle.portrait.fill")
                             Spacer()
+                            Toggle("记录", isOn: Binding(
+                                get: { store.currentAccountSecurityLoggingEnabled },
+                                set: { store.setSecurityLoggingForCurrentAccount($0) }
+                            ))
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
                             Picker("筛选", selection: $selectedLogCategory) {
                                 ForEach(SecurityLogCategory.allCases) { category in
                                     Text(category.label).tag(category)
@@ -2935,9 +2913,11 @@ struct SecurityCenterView: View {
                             .labelsHidden()
                             .frame(width: 150)
                         }
-                        Text("日志随当前账户加密保存，只记录事件、时间和结果，不记录笔记正文、文件内容、密码或恢复码。")
+                        Text(store.currentAccountSecurityLoggingEnabled
+                             ? "日志随当前账户加密保存，只记录事件、时间和结果，不记录笔记正文、文件内容、密码或恢复码。"
+                             : "安全日志已关闭。现有记录仍保留，但应用不会继续新增记录。")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(store.currentAccountSecurityLoggingEnabled ? Color.secondary : Color.orange)
                         if filteredSecurityLogs.isEmpty {
                             ContentUnavailableView("暂无安全日志", systemImage: "checkmark.shield")
                                 .frame(maxWidth: .infinity, minHeight: 120)
@@ -3281,19 +3261,12 @@ struct SecurityCenterView: View {
     }
 
     private func clearSecurityLogs() {
-        let alert = NSAlert()
-        alert.messageText = "清空安全日志？"
-        alert.informativeText = "这只会清空当前账户的本地安全日志，不会删除笔记或保险柜文件。"
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: "继续")
-        alert.addButton(withTitle: "取消")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let auth = requestDangerAuthorization(
-            title: "确认清空安全日志",
-            message: "请输入当前账户密码，并输入“清空安全日志”继续。",
-            confirmationPrompt: "输入：清空安全日志"
+        guard let password = requestPasswordAuthorization(
+            title: "清空安全日志？",
+            message: "这只会清空当前账户的本地安全日志，不会删除笔记或保险柜文件。请输入当前账户密码继续。",
+            actionTitle: "清空"
         ) else { return }
-        store.clearSecurityLogs(currentPassword: auth.password, confirmationText: auth.confirmation)
+        store.clearSecurityLogs(currentPassword: password)
     }
 
     private func disableDecoyPassword() {
@@ -3650,6 +3623,87 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.13",
+            version: "1.1.13",
+            title: "登录界面重构",
+            dateText: "2026-07-26",
+            items: [
+                "登录、注册和恢复重构为统一的紧凑 macOS 验证界面，全屏与最小窗口都会保持合理居中。",
+                "锁定状态不再显示底部工具栏，账户选择合并成一条完整的本地账户菜单。",
+                "主操作按钮改为整行宽度，三段选择栏位置固定，下面的玻璃内容区按模式平滑改变高度。",
+                "修复首次打开时选择栏与表单内容短暂不一致、切换裁切和玻璃面板空白过大的问题。",
+                "新增登录与首次注册快照回归测试，发布版本更新为 1.1.13 (50)。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.1.12",
+            version: "1.1.12",
+            title: "安全与稳定性修复",
+            dateText: "2026-07-25",
+            items: [
+                "强化最高保护模式的会话隔离，切换安全上下文前会清理当前工作区与敏感预览缓存。",
+                "受保护的数据区使用独立加密载荷，并继续兼容已有本地保险库。",
+                "清空安全日志改为一次账户密码确认，不再重复弹窗或要求输入固定确认文字。",
+                "新增隔离、加密落盘、锁定重登与日志授权回归测试，发布版本更新为 1.1.12 (49)。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.1.11",
+            version: "1.1.11",
+            title: "全屏查看器适配",
+            dateText: "2026-07-25",
+            items: [
+                "查看器不再使用固定尺寸弹窗，而是覆盖完整保险柜工作区并跟随主窗口实时伸缩。",
+                "右上角新增系统全屏切换，进入或退出全屏时不会重新解密当前文件。",
+                "适合窗口状态会随视口尺寸重新计算；用户主动放大后则保留当前缩放位置。",
+                "新增 1440×900 实际图片区域回归测试，防止只扩大外层而内容仍停留在小窗口。",
+                "发布版本更新为 1.1.11 (48)。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.1.10",
+            version: "1.1.10",
+            title: "原生焦点缩放与查看器修复",
+            dateText: "2026-07-25",
+            items: [
+                "双击图片和 macOS 智能缩放现在会以指针下方的图片像素为锚点，不再固定围绕整张图片中心放大。",
+                "放大前后点击像素会保持在指针对应的视口位置，连续检查细节时不需要再次拖动画面。",
+                "工具栏缩放继续围绕当前视口中心，适合窗口仍会恢复完整图片。",
+                "新增 AppKit 坐标锚定回归测试，发布版本更新为 1.1.10 (47)。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.1.9",
+            version: "1.1.9",
+            title: "原生媒体查看器与性能重构",
+            dateText: "2026-07-21",
+            items: [
+                "照片、视频、音频、PDF 与文本查看器拆分为独立模块，保险柜列表不再承担预览器生命周期。",
+                "大图通过加密随机访问与 ImageIO 按需降采样，不再先把完整文件解密进内存。",
+                "图片支持原生触控板捏合、双击、快捷键缩放、窗口变化后自动适配，并在切图时保留上一帧避免闪白。",
+                "缩略图改为惰性胶片栏，预载相邻照片；重复查看会复用受控缓存，锁定时立即取消并清空。",
+                "视频使用原生播放控件，音频只在拖动结束后定位，离开文件会立即停止播放并释放观察器。",
+                "多张普通照片也会在后台导入，避免加密工作阻塞主界面。",
+                "旧保险库即使缺少 MIME 信息，也能依据扩展名识别 HEIC、MOV、M4A、PDF 与文本。",
+                "发布版本更新为 1.1.9 (46)，39 项自动化测试全部通过。"
+            ]
+        ),
+        UpdateLogEntry(
+            id: "1.1.8",
+            version: "1.1.8",
+            title: "照片保险柜与稳定性更新",
+            dateText: "2026-07-21",
+            items: [
+                "保险柜支持全页拖拽导入，移入前明确提示原文件会在加密成功后删除。",
+                "新增连续照片与视频查看器，支持左右切换、方向键、缩略图、图片缩放和媒体进度控制。",
+                "图片改用 macOS 原生缩放容器，支持触控板捏合、双击缩放、滚动查看和适合窗口，并移除人为触控板震动。",
+                "大图在后台解密并按显示尺寸降采样；音视频按需读取加密分块，不写入明文临时文件。",
+                "安全日志现在可按账户关闭后续记录，已有的加密日志会保留。",
+                "修复登录后主工作区塌缩和底部功能栏覆盖内容的问题。",
+                "发布版本更新为 1.1.8 (45)。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.7",
             version: "1.1.7",

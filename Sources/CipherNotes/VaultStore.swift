@@ -58,6 +58,7 @@ private final class VaultImportCancellationToken: @unchecked Sendable {
 
     func cancel() {
         condition.lock()
+        guard !cancelled else { condition.unlock(); return }
         cancelled = true
         paused = false
         condition.broadcast()
@@ -73,6 +74,7 @@ private final class VaultImportCancellationToken: @unchecked Sendable {
 
     func resume() {
         condition.lock()
+        guard !cancelled else { condition.unlock(); return }
         paused = false
         condition.broadcast()
         condition.unlock()
@@ -101,6 +103,7 @@ final class VaultStore: ObservableObject {
     @Published private(set) var accounts: [AccountSummary] = []
     @Published private(set) var securityLogs: [SecurityLogEntry] = []
     @Published private(set) var isDecoySession = false
+    @Published private(set) var isSuperPrivateSession = false
     @Published private(set) var vaultImportJobs: [VaultImportJob] = []
     @Published private(set) var vaultDeletingItemIDs: Set<UUID> = []
     @Published var recoveryCodeToShow: String?
@@ -111,6 +114,7 @@ final class VaultStore: ObservableObject {
     nonisolated private static let sharedNoteVersion = 1
     nonisolated private static let maxSecurityLogEntries = 120
     nonisolated private static let decoyVerifierContext = Data("ciphernotes-decoy-password-v1".utf8)
+    nonisolated private static let superPrivateSpaceContext = Data("ciphernotes-super-private-space-v1".utf8)
 
     private let vaultURL: URL
     private var vaultKey: Data?
@@ -129,11 +133,18 @@ final class VaultStore: ObservableObject {
         var lastAccess: UInt64
     }
     private var imagePreviewCache: [UUID: PreviewCacheEntry] = [:]
+    private var viewerImageCache: [UUID: PreviewCacheEntry] = [:]
+    private var thumbnailLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
+    private var viewerImageLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
+    private var viewerPreloadTasks: [UUID: Task<Void, Never>] = [:]
     private var previewCacheClock: UInt64 = 0
+    private var previewCacheGeneration: UInt64 = 0
     private var previewCacheCost = 0
-    nonisolated private static let maxPreviewSourceBytes = 64 * 1024 * 1024
+    private var viewerCacheCost = 0
     nonisolated private static let maxPreviewCacheCost = 48 * 1024 * 1024
     nonisolated private static let maxPreviewCacheItems = 32
+    nonisolated private static let maxViewerCacheCost = 192 * 1024 * 1024
+    nonisolated private static let maxViewerCacheItems = 3
     // Keep encryption of moderately sized files off the main actor. Tiny files
     // still use the synchronous path to avoid task setup overhead.
     nonisolated private static let backgroundImportThresholdBytes = 4 * 1024 * 1024
@@ -232,6 +243,7 @@ final class VaultStore: ObservableObject {
             vaultItems.removeAll(keepingCapacity: false)
             securityLogs.removeAll(keepingCapacity: false)
             isDecoySession = false
+            isSuperPrivateSession = false
             imagePreviewCache.removeAll(keepingCapacity: false)
             signedInUsername = nil
             userCount = 0
@@ -266,6 +278,7 @@ final class VaultStore: ObservableObject {
             vaultItems.removeAll(keepingCapacity: false)
             securityLogs.removeAll(keepingCapacity: false)
             isDecoySession = false
+            isSuperPrivateSession = false
             imagePreviewCache.removeAll(keepingCapacity: false)
             signedInUsername = nil
             userCount = 0
@@ -379,6 +392,10 @@ final class VaultStore: ObservableObject {
     }
 
     func changeCurrentUserPassword(currentPassword: String, newPassword: String, confirmation: String) {
+        guard !isSuperPrivateSession else {
+            errorMessage = "请先退出超级隐私空间"
+            return
+        }
         guard newPassword == confirmation else {
             errorMessage = "两次输入的新密码不一致"
             return
@@ -476,6 +493,29 @@ final class VaultStore: ObservableObject {
         isAdvancedDataProtectionEnabled(userID: currentUserID)
     }
 
+    var currentAccountSecurityLoggingEnabled: Bool {
+        guard let currentUserID,
+              let user = vaultFile?.users.first(where: { $0.id == currentUserID }) else { return true }
+        return user.securityLoggingEnabled
+    }
+
+    func setSecurityLoggingForCurrentAccount(_ enabled: Bool) {
+        guard var file = vaultFile,
+              let currentUserID,
+              let index = file.users.firstIndex(where: { $0.id == currentUserID }) else { return }
+        do {
+            file.users[index].securityLoggingEnabled = enabled
+            file.users[index].updatedAt = .now
+            file.updatedAt = .now
+            try write(file)
+            vaultFile = file
+            refreshAccounts(from: file)
+            errorMessage = nil
+        } catch {
+            errorMessage = "无法更新安全日志设置"
+        }
+    }
+
     var currentAccountID: UUID? {
         currentUserID
     }
@@ -492,6 +532,84 @@ final class VaultStore: ObservableObject {
         vaultItems.reduce(0) { $0 + $1.byteCount }
     }
 
+    func authorizeCurrentAccount(password: String) -> Bool {
+        do {
+            try validateCurrentUserPassword(password, against: try readVaultFile())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = "账户密码不正确"
+            return false
+        }
+    }
+
+    var currentAccountSuperPrivateSpaceEnabled: Bool {
+        guard let currentUserID,
+              let user = vaultFile?.users.first(where: { $0.id == currentUserID }) else {
+            return false
+        }
+        return user.superPrivateSpaceSalt != nil && user.superPrivateEncryptedPayload != nil
+    }
+
+    @discardableResult
+    func enterSuperPrivateSpace(password: String) -> Bool {
+        guard currentAccountAdvancedDataProtectionEnabled else {
+            errorMessage = "请先开启最高保护模式"
+            return false
+        }
+        guard !isDecoySession, !isSuperPrivateSession else {
+            errorMessage = "当前会话不能进入超级隐私空间"
+            return false
+        }
+        guard let mainVaultKey = vaultKey, let currentUserID else {
+            errorMessage = "当前账户尚未解锁"
+            return false
+        }
+
+        do {
+            persist()
+            cancelAllVaultImportJobs()
+            var file = try readVaultFile()
+            try validateCurrentUserPassword(password, against: file)
+            guard let index = file.users.firstIndex(where: { $0.id == currentUserID }) else {
+                throw VaultError.invalidUsername
+            }
+
+            let salt = try file.users[index].superPrivateSpaceSalt ?? CryptoService.randomData(count: 32)
+            let privateKey = Self.superPrivateSpaceKey(mainVaultKey: mainVaultKey, salt: salt)
+            let payload: VaultPayload
+            if let encrypted = file.users[index].superPrivateEncryptedPayload {
+                payload = try decodePayload(from: encrypted, rawKey: privateKey)
+            } else {
+                payload = VaultPayload(notes: [], vaultItems: [], securityLogs: [])
+                file.users[index].superPrivateSpaceSalt = salt
+                file.users[index].superPrivateEncryptedPayload = try CryptoService.seal(
+                    JSONEncoder().encode(payload),
+                    using: SymmetricKey(data: privateKey)
+                )
+                file.users[index].updatedAt = .now
+                file.updatedAt = .now
+                try write(file)
+            }
+
+            clearSensitivePreviewCaches()
+            notes = payload.notes
+            vaultItems = payload.vaultItems
+            securityLogs.removeAll(keepingCapacity: false)
+            vaultFile = file
+            vaultKey = privateKey
+            isDecoySession = false
+            isSuperPrivateSession = true
+            autoLockMinutes = 1
+            errorMessage = nil
+            touchActivity()
+            return true
+        } catch {
+            errorMessage = (error as? VaultError)?.localizedDescription ?? "无法打开超级隐私空间"
+            return false
+        }
+    }
+
     func isAdvancedDataProtectionEnabled(userID: UUID?) -> Bool {
         guard let userID else { return false }
         if let user = vaultFile?.users.first(where: { $0.id == userID }) { return user.advancedDataProtectionEnabled }
@@ -499,6 +617,10 @@ final class VaultStore: ObservableObject {
     }
 
     func setAdvancedDataProtectionForCurrentAccount(_ enabled: Bool) {
+        guard !isSuperPrivateSession else {
+            errorMessage = "请先退出超级隐私空间"
+            return
+        }
         guard let currentUserID else { return }
         setAdvancedDataProtectionEnabled(enabled, for: currentUserID)
     }
@@ -611,7 +733,7 @@ final class VaultStore: ObservableObject {
                 imagePreviewCache.removeAll(keepingCapacity: false)
             }
             if currentUserID == userID {
-                recordSecurityEvent(enabled ? .advancedProtectionEnabled : .advancedProtectionDisabled, message: enabled ? "复制、导出、共享和预览已限制" : "高级数据保护已关闭")
+                recordSecurityEvent(enabled ? .advancedProtectionEnabled : .advancedProtectionDisabled, message: enabled ? "缩略图、复制、导出和共享已限制" : "高级数据保护已关闭")
             }
             errorMessage = enabled ? "高级数据保护已开启：预览已隐藏，自动锁定已收紧到 1 分钟" : "高级数据保护已关闭"
         } catch {
@@ -652,6 +774,8 @@ final class VaultStore: ObservableObject {
 
     func recordSecurityEvent(_ eventType: SecurityLogEventType, result: SecurityLogResult = .success, message: String) {
         guard state == .unlocked, vaultKey != nil, currentUserID != nil else { return }
+        guard !isSuperPrivateSession else { return }
+        guard currentAccountSecurityLoggingEnabled else { return }
         if let latest = securityLogs.first,
            latest.eventType == eventType,
            latest.result == result,
@@ -672,21 +796,23 @@ final class VaultStore: ObservableObject {
         persist()
     }
 
-    func clearSecurityLogs(currentPassword: String, confirmationText: String) {
-        guard confirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "清空安全日志" else {
-            errorMessage = "请输入“清空安全日志”以确认"
+    func clearSecurityLogs(currentPassword: String) {
+        guard !currentPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = VaultError.passwordRequired.localizedDescription
             return
         }
         do {
             let file = try readVaultFile()
             try validateCurrentUserPassword(currentPassword, against: file)
             securityLogs.removeAll(keepingCapacity: false)
-            securityLogs.append(SecurityLogEntry(
-                eventType: .securityLogsCleared,
-                result: .success,
-                accountName: signedInUsername ?? "本地账户",
-                message: "安全日志已清空"
-            ))
+            if currentAccountSecurityLoggingEnabled {
+                securityLogs.append(SecurityLogEntry(
+                    eventType: .securityLogsCleared,
+                    result: .success,
+                    accountName: signedInUsername ?? "本地账户",
+                    message: "安全日志已清空"
+                ))
+            }
             persist()
             errorMessage = "安全日志已清空"
         } catch {
@@ -830,6 +956,7 @@ final class VaultStore: ObservableObject {
         currentUserID = nil
         signedInUsername = nil
         isDecoySession = false
+        isSuperPrivateSession = false
         state = .locked
         errorMessage = nil
     }
@@ -945,75 +1072,94 @@ final class VaultStore: ObservableObject {
         let sourceURLs = urls
         let vaultURL = vaultURL
         let importJobs = beginVaultImportJobs(for: sourceURLs)
-        let shouldImportInBackground = sourceURLs.contains { url in
+        let shouldImportInBackground = sourceURLs.count > 1 || sourceURLs.contains { url in
             ((try? Self.fileByteCount(at: url)) ?? Self.backgroundImportThresholdBytes) >= Self.backgroundImportThresholdBytes
         }
         if !shouldImportInBackground {
-            var importedItems: [VaultAttachment] = []
-            var sourceURLsToDelete: [URL] = []
-            do {
-                for (url, job) in zip(sourceURLs, importJobs) {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                    let byteCount = try Self.fileByteCount(at: url)
-                    let item = VaultAttachment(
-                        fileName: Self.sanitizedFileName(url.lastPathComponent),
-                        contentType: Self.contentType(for: url),
-                        byteCount: byteCount
-                    )
-                    let token = vaultImportCancellationTokens[job.id]
-                    try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
-                        token?.isCancelled == true
-                    }, waitIfPaused: {
-                        token?.waitIfPaused()
-                    }) { processed in
-                        Task { @MainActor in
-                            self.updateVaultImportJob(id: job.id, processedByteCount: processed)
-                        }
-                    }
-                    finishVaultImportJob(id: job.id, status: .finished)
-                    importedItems.append(item)
-                    sourceURLsToDelete.append(url)
-                }
-                vaultItems.insert(contentsOf: importedItems, at: 0)
-                persist()
-                touchActivity()
-
-                var deleteFailures = 0
-                if deleteOriginals {
-                    for url in sourceURLsToDelete {
-                        let accessing = url.startAccessingSecurityScopedResource()
-                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                        do { try FileManager.default.removeItem(at: url) } catch { deleteFailures += 1 }
-                    }
-                }
-                if deleteOriginals && deleteFailures > 0 {
-                    errorMessage = "文件已加密进入保险柜，但有 \(deleteFailures) 个原文件未能删除，请手动确认。"
-                } else {
-                    errorMessage = importedItems.count == 1 ? "已移入保险柜，原文件已删除" : "已移入 \(importedItems.count) 个文件，原文件已删除"
-                }
-                recordSecurityEvent(.vaultFilesImported, message: "已加密移入 \(importedItems.count) 个保险柜文件")
-            } catch {
-                let status: VaultImportJobStatus
-                if case .importCancelled = error as? VaultError {
-                    status = .cancelled
-                } else {
-                    status = .failed
-                }
-                importJobs.forEach { finishVaultImportJob(id: $0.id, status: status) }
-                importedItems.forEach { try? Self.removeAttachmentBlob(id: $0.id, userID: currentUserID, vaultURL: vaultURL) }
-                if status == .cancelled {
-                    errorMessage = "保险柜导入已取消"
-                    recordSecurityEvent(.vaultFilesImported, result: .blocked, message: "保险柜文件导入已取消")
-                } else {
-                    errorMessage = "移入保险柜失败：\(error.localizedDescription)"
-                    recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
-                }
-            }
+            performSynchronousImport(
+                sourceURLs: sourceURLs,
+                importJobs: importJobs,
+                currentUserID: currentUserID,
+                vaultKey: vaultKey,
+                vaultURL: vaultURL,
+                deleteOriginals: deleteOriginals
+            )
             return
         }
 
         errorMessage = sourceURLs.count == 1 ? "大文件正在后台加密移入保险柜" : "\(sourceURLs.count) 个大文件正在后台加密移入保险柜"
+        performBackgroundImport(
+            sourceURLs: sourceURLs,
+            importJobs: importJobs,
+            currentUserID: currentUserID,
+            vaultKey: vaultKey,
+            vaultURL: vaultURL,
+            deleteOriginals: deleteOriginals
+        )
+    }
+
+    private func performSynchronousImport(
+        sourceURLs: [URL],
+        importJobs: [VaultImportJob],
+        currentUserID: UUID,
+        vaultKey: Data,
+        vaultURL: URL,
+        deleteOriginals: Bool
+    ) {
+        var importedItems: [VaultAttachment] = []
+        var sourceURLsToDelete: [URL] = []
+        do {
+            for (url, job) in zip(sourceURLs, importJobs) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                let byteCount = try Self.fileByteCount(at: url)
+                let item = VaultAttachment(
+                    fileName: Self.sanitizedFileName(url.lastPathComponent),
+                    contentType: Self.contentType(for: url),
+                    byteCount: byteCount
+                )
+                let token = vaultImportCancellationTokens[job.id]
+                try Self.writeAttachmentFile(from: url, for: item.id, userID: currentUserID, rawKey: vaultKey, byteCount: byteCount, vaultURL: vaultURL, shouldCancel: {
+                    token?.isCancelled == true
+                }, waitIfPaused: {
+                    token?.waitIfPaused()
+                }) { processed in
+                    Task { @MainActor in
+                        self.updateVaultImportJob(id: job.id, processedByteCount: processed)
+                    }
+                }
+                finishVaultImportJob(id: job.id, status: .finished)
+                importedItems.append(item)
+                sourceURLsToDelete.append(url)
+            }
+            vaultItems.insert(contentsOf: importedItems, at: 0)
+            persist()
+            touchActivity()
+
+            let deleteFailures = deleteOriginalFiles(sourceURLsToDelete, deleteOriginals: deleteOriginals)
+            showImportSuccessMessage(importedCount: importedItems.count, deleteFailures: deleteFailures, deleteOriginals: deleteOriginals)
+            recordSecurityEvent(.vaultFilesImported, message: "已加密移入 \(importedItems.count) 个保险柜文件")
+        } catch {
+            let status: VaultImportJobStatus
+            if case .importCancelled = error as? VaultError {
+                status = .cancelled
+            } else {
+                status = .failed
+            }
+            importJobs.forEach { finishVaultImportJob(id: $0.id, status: status) }
+            importedItems.forEach { try? Self.removeAttachmentBlob(id: $0.id, userID: currentUserID, vaultURL: vaultURL) }
+            handleImportError(status: status, error: error)
+        }
+    }
+
+    private func performBackgroundImport(
+        sourceURLs: [URL],
+        importJobs: [VaultImportJob],
+        currentUserID: UUID,
+        vaultKey: Data,
+        vaultURL: URL,
+        deleteOriginals: Bool
+    ) {
         Task.detached(priority: .utility) {
             var importedItems: [VaultAttachment] = []
             var sourceURLsToDelete: [URL] = []
@@ -1063,20 +1209,11 @@ final class VaultStore: ObservableObject {
                     return
                 }
 
-                var deleteFailures = 0
-                if deleteOriginals {
-                    for url in sourceURLsToDelete {
-                        let accessing = url.startAccessingSecurityScopedResource()
-                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                        do { try FileManager.default.removeItem(at: url) } catch { deleteFailures += 1 }
-                    }
+                let deleteFailures = await MainActor.run {
+                    self.deleteOriginalFiles(sourceURLsToDelete, deleteOriginals: deleteOriginals)
                 }
                 await MainActor.run {
-                    if deleteOriginals && deleteFailures > 0 {
-                        self.errorMessage = "文件已加密进入保险柜，但有 \(deleteFailures) 个原文件未能删除，请手动确认。"
-                    } else {
-                        self.errorMessage = importedItems.count == 1 ? "已移入保险柜，原文件已删除" : "已移入 \(importedItems.count) 个文件，原文件已删除"
-                    }
+                    self.showImportSuccessMessage(importedCount: importedItems.count, deleteFailures: deleteFailures, deleteOriginals: deleteOriginals)
                     self.recordSecurityEvent(.vaultFilesImported, message: "已加密移入 \(importedItems.count) 个保险柜文件")
                 }
             } catch {
@@ -1085,21 +1222,44 @@ final class VaultStore: ObservableObject {
                 }
                 await MainActor.run {
                     let status: VaultImportJobStatus
-                    if case .importCancelled = error as? VaultError {
-                        status = .cancelled
-                    } else {
-                        status = .failed
-                    }
+            if case .importCancelled = error as? VaultError {
+                status = .cancelled
+            } else {
+                status = .failed
+            }
                     importJobs.forEach { self.finishVaultImportJob(id: $0.id, status: status) }
-                    if status == .cancelled {
-                        self.errorMessage = "保险柜导入已取消"
-                        self.recordSecurityEvent(.vaultFilesImported, result: .blocked, message: "保险柜文件导入已取消")
-                    } else {
-                        self.errorMessage = "移入保险柜失败：\(error.localizedDescription)"
-                        self.recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
-                    }
+                    self.handleImportError(status: status, error: error)
                 }
             }
+        }
+    }
+
+    private func deleteOriginalFiles(_ urls: [URL], deleteOriginals: Bool) -> Int {
+        guard deleteOriginals else { return 0 }
+        var failures = 0
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do { try FileManager.default.removeItem(at: url) } catch { failures += 1 }
+        }
+        return failures
+    }
+
+    private func showImportSuccessMessage(importedCount: Int, deleteFailures: Int, deleteOriginals: Bool) {
+        if deleteOriginals && deleteFailures > 0 {
+            errorMessage = "文件已加密进入保险柜，但有 \(deleteFailures) 个原文件未能删除，请手动确认。"
+        } else {
+            errorMessage = importedCount == 1 ? "已移入保险柜，原文件已删除" : "已移入 \(importedCount) 个文件，原文件已删除"
+        }
+    }
+
+    private func handleImportError(status: VaultImportJobStatus, error: Error) {
+        if status == .cancelled {
+            errorMessage = "保险柜导入已取消"
+            recordSecurityEvent(.vaultFilesImported, result: .blocked, message: "保险柜文件导入已取消")
+        } else {
+            errorMessage = "移入保险柜失败：\(error.localizedDescription)"
+            recordSecurityEvent(.vaultFilesImported, result: .failure, message: "保险柜文件导入失败")
         }
     }
 
@@ -1163,6 +1323,9 @@ final class VaultStore: ObservableObject {
 
     private func updateVaultImportJob(id: UUID, processedByteCount: Int) {
         guard let index = vaultImportJobs.firstIndex(where: { $0.id == id }) else { return }
+        let job = vaultImportJobs[index]
+        let progressDelta = Double(processedByteCount - job.processedByteCount) / Double(max(1, job.byteCount))
+        guard progressDelta >= 0.01 || processedByteCount == job.byteCount else { return }
         vaultImportJobs[index].processedByteCount = processedByteCount
         vaultImportJobs[index].updatedAt = .now
     }
@@ -1206,9 +1369,18 @@ final class VaultStore: ObservableObject {
     }
 
     func clearSensitivePreviewCaches(recordEvent: Bool = false) {
-        let hadPreviewCache = !imagePreviewCache.isEmpty
+        let hadPreviewCache = !imagePreviewCache.isEmpty || !viewerImageCache.isEmpty
+        previewCacheGeneration &+= 1
+        thumbnailLoadTasks.values.forEach { $0.cancel() }
+        viewerImageLoadTasks.values.forEach { $0.cancel() }
+        viewerPreloadTasks.values.forEach { $0.cancel() }
+        thumbnailLoadTasks.removeAll(keepingCapacity: false)
+        viewerImageLoadTasks.removeAll(keepingCapacity: false)
+        viewerPreloadTasks.removeAll(keepingCapacity: false)
         imagePreviewCache.removeAll(keepingCapacity: false)
+        viewerImageCache.removeAll(keepingCapacity: false)
         previewCacheCost = 0
+        viewerCacheCost = 0
         if recordEvent && hadPreviewCache {
             recordSecurityEvent(.protectedActionBlocked, message: "锁定时已清理保险柜预览缓存")
         }
@@ -1266,12 +1438,87 @@ final class VaultStore: ObservableObject {
             return cached.image
         }
         guard let item = vaultItems.first(where: { $0.id == itemID }),
-              item.contentType?.hasPrefix("image/") == true,
-              item.byteCount <= Self.maxPreviewSourceBytes,
+              VaultFileKind(item) == .image,
               let vaultKey,
               let currentUserID else { return nil }
+        let cacheGeneration = previewCacheGeneration
         let url = attachmentURL(for: itemID, userID: currentUserID)
-        let imageBox = await Task.detached(priority: .utility) {
+        let task = thumbnailLoadTasks[itemID] ?? Task.detached(priority: .utility) {
+            Self.decodeEncryptedImage(
+                url: url,
+                rawKey: vaultKey,
+                expectedByteCount: item.byteCount,
+                maximumPixelSize: 560
+            )
+        }
+        thumbnailLoadTasks[itemID] = task
+        let imageBox = await task.value
+        thumbnailLoadTasks[itemID] = nil
+        guard !Task.isCancelled,
+              self.currentUserID == currentUserID,
+              previewCacheGeneration == cacheGeneration else { return nil }
+        let image = imageBox?.image
+        if let image { insertPreviewImage(image, for: itemID) }
+        return image
+    }
+
+    func loadVaultImageForViewing(itemID: UUID, recordViewEvent: Bool = true) async -> NSImage? {
+        if var cached = viewerImageCache[itemID] {
+            previewCacheClock &+= 1
+            cached.lastAccess = previewCacheClock
+            viewerImageCache[itemID] = cached
+            if recordViewEvent {
+                recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
+            }
+            return cached.image
+        }
+        guard let item = vaultItems.first(where: { $0.id == itemID }),
+              VaultFileKind(item) == .image,
+              let vaultKey,
+              let currentUserID else {
+            if recordViewEvent { errorMessage = "图片格式不受支持" }
+            return nil
+        }
+        let cacheGeneration = previewCacheGeneration
+        let url = attachmentURL(for: itemID, userID: currentUserID)
+        let task = viewerImageLoadTasks[itemID] ?? Task.detached(priority: recordViewEvent ? .userInitiated : .utility) {
+            Self.decodeEncryptedImage(
+                url: url,
+                rawKey: vaultKey,
+                expectedByteCount: item.byteCount,
+                maximumPixelSize: 4096
+            )
+        }
+        viewerImageLoadTasks[itemID] = task
+        let imageBox = await task.value
+        viewerImageLoadTasks[itemID] = nil
+        guard !Task.isCancelled,
+              self.currentUserID == currentUserID,
+              previewCacheGeneration == cacheGeneration else { return nil }
+        guard let image = imageBox?.image else {
+            if recordViewEvent {
+                errorMessage = "无法读取这张图片"
+                recordSecurityEvent(.vaultFileViewed, result: .failure, message: "保险柜图片内部查看失败")
+            }
+            return nil
+        }
+        insertViewerImage(image, for: itemID)
+        if recordViewEvent {
+            recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
+        }
+        return image
+    }
+
+    func loadVaultDocumentForViewing(itemID: UUID, maximumBytes: Int) async -> Data? {
+        guard let item = vaultItems.first(where: { $0.id == itemID }),
+              item.byteCount <= maximumBytes,
+              let vaultKey,
+              let currentUserID else {
+            errorMessage = "文件过大，无法在内置查看器中打开"
+            return nil
+        }
+        let url = attachmentURL(for: itemID, userID: currentUserID)
+        let task: Task<Data?, Never> = Task.detached(priority: .userInitiated) {
             do {
                 let reader = try EncryptedAttachmentReader(
                     url: url,
@@ -1280,19 +1527,70 @@ final class VaultStore: ObservableObject {
                     maximumEncryptedChunkSize: Self.maxEncryptedAttachmentChunkSize,
                     encryptedChunkOverhead: Self.attachmentChunkOverhead
                 )
-                let data = try reader.readAll(maximumBytes: Self.maxPreviewSourceBytes)
-                return Self.downsampledImage(data: data, maximumPixelSize: 560).map(SendableNSImage.init)
+                guard reader.byteCount == item.byteCount else { throw VaultError.corruptVault }
+                return try reader.readAll(maximumBytes: maximumBytes)
             } catch {
                 return nil
             }
-        }.value
-        let image = imageBox?.image
-        if let image { insertPreviewImage(image, for: itemID) }
-        return image
+        }
+        let result = await task.value
+        guard !Task.isCancelled, self.currentUserID == currentUserID else { return nil }
+        guard let result else {
+            errorMessage = "无法读取该文件"
+            recordSecurityEvent(.vaultFileViewed, result: .failure, message: "保险柜文件内部查看失败")
+            return nil
+        }
+        recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
+        return result
     }
 
-    nonisolated private static func downsampledImage(data: Data, maximumPixelSize: Int) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+    func preloadVaultImages(around itemID: UUID) {
+        guard !currentAccountAdvancedDataProtectionEnabled else { return }
+        let images = vaultItems
+            .filter { VaultFileKind($0) == .image }
+            .sorted { $0.createdAt > $1.createdAt }
+        guard let index = images.firstIndex(where: { $0.id == itemID }) else { return }
+        let nearbyIndices = [index - 1, index + 1].filter { images.indices.contains($0) }
+        for nearbyIndex in nearbyIndices {
+            let id = images[nearbyIndex].id
+            guard viewerImageCache[id] == nil,
+                  viewerImageLoadTasks[id] == nil,
+                  viewerPreloadTasks[id] == nil else { continue }
+            viewerPreloadTasks[id] = Task { [weak self] in
+                guard let self else { return }
+                _ = await self.loadVaultImageForViewing(itemID: id, recordViewEvent: false)
+                self.viewerPreloadTasks[id] = nil
+            }
+        }
+    }
+
+    nonisolated private static func decodeEncryptedImage(
+        url: URL,
+        rawKey: Data,
+        expectedByteCount: Int,
+        maximumPixelSize: Int
+    ) -> SendableNSImage? {
+        do {
+            let reader = try EncryptedAttachmentReader(
+                url: url,
+                rawKey: rawKey,
+                magic: attachmentMagic,
+                maximumEncryptedChunkSize: maxEncryptedAttachmentChunkSize,
+                encryptedChunkOverhead: attachmentChunkOverhead
+            )
+            guard reader.byteCount == expectedByteCount,
+                  let provider = reader.makeRandomAccessDataProvider(),
+                  let source = CGImageSourceCreateWithDataProvider(
+                    provider,
+                    [kCGImageSourceShouldCache: false] as CFDictionary
+                  ) else { return nil }
+            return downsampledImage(source: source, maximumPixelSize: maximumPixelSize).map(SendableNSImage.init)
+        } catch {
+            return nil
+        }
+    }
+
+    nonisolated private static func downsampledImage(source: CGImageSource, maximumPixelSize: Int) -> NSImage? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -1304,23 +1602,62 @@ final class VaultStore: ObservableObject {
     }
 
     private func insertPreviewImage(_ image: NSImage, for itemID: UUID) {
-        previewCacheCost = imagePreviewCache.values.reduce(0) { $0 + $1.cost }
         removePreviewCacheEntry(for: itemID)
         previewCacheClock &+= 1
-        let pixels = image.representations.first.map { max(1, $0.pixelsWide) * max(1, $0.pixelsHigh) } ?? 1
-        let entry = PreviewCacheEntry(image: image, cost: pixels * 4, lastAccess: previewCacheClock)
+        let entry = PreviewCacheEntry(image: image, cost: Self.imageCost(image), lastAccess: previewCacheClock)
         imagePreviewCache[itemID] = entry
         previewCacheCost += entry.cost
+        evictPreviewCacheIfNeeded()
+    }
+
+    private func insertViewerImage(_ image: NSImage, for itemID: UUID) {
+        removeViewerCacheEntry(for: itemID)
+        previewCacheClock &+= 1
+        let entry = PreviewCacheEntry(image: image, cost: Self.imageCost(image), lastAccess: previewCacheClock)
+        viewerImageCache[itemID] = entry
+        viewerCacheCost += entry.cost
+        evictViewerCacheIfNeeded()
+    }
+
+    private func evictPreviewCacheIfNeeded() {
         while imagePreviewCache.count > Self.maxPreviewCacheItems || previewCacheCost > Self.maxPreviewCacheCost {
             guard let oldest = imagePreviewCache.min(by: { $0.value.lastAccess < $1.value.lastAccess }) else { break }
             removePreviewCacheEntry(for: oldest.key)
         }
     }
 
+    private func evictViewerCacheIfNeeded() {
+        while viewerImageCache.count > Self.maxViewerCacheItems || viewerCacheCost > Self.maxViewerCacheCost {
+            guard let oldest = viewerImageCache.min(by: { $0.value.lastAccess < $1.value.lastAccess }) else { break }
+            removeViewerCacheEntry(for: oldest.key)
+        }
+    }
+
+    nonisolated private static func imageCost(_ image: NSImage) -> Int {
+        image.representations.first.map { max(1, $0.pixelsWide) * max(1, $0.pixelsHigh) * 4 } ?? 4
+    }
+
     private func removePreviewCacheEntry(for itemID: UUID) {
         if let removed = imagePreviewCache.removeValue(forKey: itemID) {
             previewCacheCost = max(0, previewCacheCost - removed.cost)
         }
+    }
+
+    private func removeViewerCacheEntry(for itemID: UUID) {
+        if let removed = viewerImageCache.removeValue(forKey: itemID) {
+            viewerCacheCost = max(0, viewerCacheCost - removed.cost)
+        }
+    }
+
+    private func cleanupVaultItemResources(itemID: UUID) {
+        removePreviewCacheEntry(for: itemID)
+        removeViewerCacheEntry(for: itemID)
+        thumbnailLoadTasks[itemID]?.cancel()
+        viewerImageLoadTasks[itemID]?.cancel()
+        viewerPreloadTasks[itemID]?.cancel()
+        thumbnailLoadTasks[itemID] = nil
+        viewerImageLoadTasks[itemID] = nil
+        viewerPreloadTasks[itemID] = nil
     }
 
     func deleteVaultItem(itemID: UUID) {
@@ -1332,7 +1669,7 @@ final class VaultStore: ObservableObject {
             do {
                 if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
                 vaultItems.removeAll { $0.id == itemID }
-                removePreviewCacheEntry(for: itemID)
+                cleanupVaultItemResources(itemID: itemID)
                 persist()
                 touchActivity()
                 errorMessage = "文件已从保险柜删除"
@@ -1351,7 +1688,7 @@ final class VaultStore: ObservableObject {
                 await MainActor.run {
                     guard self.currentUserID == currentUserID else { return }
                     self.vaultItems.removeAll { $0.id == itemID }
-                    self.removePreviewCacheEntry(for: itemID)
+                    self.cleanupVaultItemResources(itemID: itemID)
                     self.vaultDeletingItemIDs.remove(itemID)
                     self.persist()
                     self.touchActivity()
@@ -1761,6 +2098,7 @@ final class VaultStore: ObservableObject {
         currentUserID = user.id
         signedInUsername = username
         isDecoySession = false
+        isSuperPrivateSession = false
         refreshAccounts(from: file)
         if user.advancedDataProtectionEnabled {
             autoLockMinutes = min(autoLockMinutes, 1)
@@ -1786,6 +2124,7 @@ final class VaultStore: ObservableObject {
         currentUserID = user.id
         signedInUsername = user.displayName ?? "本地账户"
         isDecoySession = true
+        isSuperPrivateSession = false
         autoLockMinutes = 1
         refreshAccounts(from: file)
         state = .unlocked
@@ -1865,6 +2204,7 @@ final class VaultStore: ObservableObject {
         accounts = []
         recoveryCodeToShow = nil
         isDecoySession = false
+        isSuperPrivateSession = false
         autoLockMinutes = 5
         state = .needsAdminSetup
         errorMessage = nil
@@ -1876,6 +2216,16 @@ final class VaultStore: ObservableObject {
         var input = key.withUnsafeBytes { Data($0) }
         input.append(decoyVerifierContext)
         return Data(SHA256.hash(data: input))
+    }
+
+    nonisolated private static func superPrivateSpaceKey(mainVaultKey: Data, salt: Data) -> Data {
+        var input = salt
+        input.append(superPrivateSpaceContext)
+        let authenticationCode = HMAC<SHA256>.authenticationCode(
+            for: input,
+            using: SymmetricKey(data: mainVaultKey)
+        )
+        return Data(authenticationCode)
     }
 
     private func decoyKey(password: String, for user: UserRecord, rounds: UInt32) throws -> Data? {
@@ -1995,7 +2345,9 @@ final class VaultStore: ObservableObject {
                 return clean
             }, vaultItems: vaultItems, securityLogs: securityLogs)
             let encryptedPayload = try CryptoService.seal(try JSONEncoder().encode(payload), using: SymmetricKey(data: vaultKey))
-            if isDecoySession {
+            if isSuperPrivateSession {
+                file.users[index].superPrivateEncryptedPayload = encryptedPayload
+            } else if isDecoySession {
                 file.users[index].decoyEncryptedNotes = encryptedPayload
             } else {
                 file.users[index].encryptedNotes = encryptedPayload

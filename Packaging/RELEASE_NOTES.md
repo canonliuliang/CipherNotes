@@ -1,21 +1,23 @@
-# CipherNotes 1.1.7 - 允许系统截屏
+# CipherNotes 1.1.13 - 登录界面重构
 
 ## Summary
 
-CipherNotes 1.1.7 allows standard macOS screenshots, screen recording, and meeting-window sharing while preserving the restored 1.0.8 interface and current login page.
+CipherNotes 1.1.13 rebuilds the login, registration, and recovery surface around a compact native macOS layout.
 
 ## Highlights
 
-- Removes the system window-sharing exclusion that blocked screenshots and recordings.
-- Allows macOS screenshots, screen recording, and meeting-window sharing of visible app content.
-- Keeps Highest Protection focus shielding, auto-lock, and sensitive preview-cache clearing.
-- Clarifies the screen-capture boundary in the legal and privacy disclosure.
-- Preserves the restored 1.0.8 interface and current responsive login page.
+- Centers the authentication surface consistently in minimum-size and full-screen windows.
+- Removes the application footer while locked, keeping account actions focused and uncluttered.
+- Replaces the duplicated account summary and picker with one full-width native account menu.
+- Makes the primary login, registration, and recovery actions use the complete form width.
+- Keeps the three-mode selector stable while the glass content region animates to the required height.
+- Prevents first-frame mode mismatch and form clipping during registration and login transitions.
+- Adds dedicated locked-account and empty-vault visual regression snapshots.
 
 ## Downloads
 
-- `密笺-1.1.7.pkg`: recommended public installer.
-- `密笺-1.1.7.zip`: portable application archive.
+- `密笺-1.1.13.pkg`: recommended public installer.
+- `密笺-1.1.13.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -23,11 +25,11 @@ Requires macOS 14 or later.
 
 - Release metadata validation
 - Swift debug and release builds
-- 33 automated tests
+- 43 automated tests
 - Minimum-window light/dark/accent render checks
 - Strict application code-signature verification
 - Installer payload verification
 
 ## Publishing
 
-Push tag `v1.1.7` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.13` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.

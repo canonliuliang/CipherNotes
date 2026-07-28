@@ -48,6 +48,89 @@ final class CryptoServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testLockedAccountLoginRendersAsCompactCenteredPanel() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let introKey = "hasSeenCipherNotesIntro"
+        let savedIntroState = UserDefaults.standard.object(forKey: introKey)
+        defer {
+            if let savedIntroState {
+                UserDefaults.standard.set(savedIntroState, forKey: introKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: introKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: introKey)
+
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "登录界面测试", password: "pass", confirmation: "pass")
+        store.lock()
+
+        let root = RootView()
+            .environmentObject(store)
+            .environment(\.colorScheme, .light)
+        let view = NSHostingView(rootView: root)
+        view.frame = NSRect(x: 0, y: 0, width: 1_440, height: 900)
+        view.layoutSubtreeIfNeeded()
+
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let snapshotPath = ProcessInfo.processInfo.environment["CIPHERNOTES_LOGIN_SNAPSHOT"],
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: snapshotPath), options: .atomic)
+        }
+        XCTAssertGreaterThan(renderedForegroundSampleCount(in: bitmap), 180)
+        XCTAssertGreaterThan(
+            renderedForegroundSampleCount(
+                in: bitmap,
+                rows: (bitmap.pixelsHigh / 4)..<(bitmap.pixelsHigh * 3 / 4)
+            ),
+            140,
+            "登录控件应集中在窗口中部，而不是贴边或塌缩"
+        )
+    }
+
+    @MainActor
+    func testEmptyVaultRegistrationRendersWithoutOverflow() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let introKey = "hasSeenCipherNotesIntro"
+        let savedIntroState = UserDefaults.standard.object(forKey: introKey)
+        defer {
+            if let savedIntroState {
+                UserDefaults.standard.set(savedIntroState, forKey: introKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: introKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: introKey)
+
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        let root = RootView()
+            .environmentObject(store)
+            .environment(\.colorScheme, .light)
+        let view = NSHostingView(rootView: root)
+        view.frame = NSRect(x: 0, y: 0, width: 860, height: 620)
+        view.layoutSubtreeIfNeeded()
+
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let snapshotPath = ProcessInfo.processInfo.environment["CIPHERNOTES_REGISTRATION_SNAPSHOT"],
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: snapshotPath), options: .atomic)
+        }
+        XCTAssertGreaterThan(renderedForegroundSampleCount(in: bitmap), 180)
+        XCTAssertGreaterThan(
+            renderedForegroundSampleCount(
+                in: bitmap,
+                rows: (bitmap.pixelsHigh / 6)..<(bitmap.pixelsHigh * 5 / 6)
+            ),
+            150,
+            "注册表单必须完整显示在最小窗口内"
+        )
+    }
+
+    @MainActor
     func testUnlockedMinimumWindowRendersWorkspace() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -75,21 +158,34 @@ final class CryptoServiceTests: XCTestCase {
 
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let snapshotPath = ProcessInfo.processInfo.environment["CIPHERNOTES_UI_SNAPSHOT"],
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: snapshotPath), options: .atomic)
+        }
         XCTAssertGreaterThan(
             renderedForegroundSampleCount(in: bitmap),
             250,
             "登录后的主工作区不能空白或被辅助栏挤出窗口"
         )
+        XCTAssertGreaterThan(
+            renderedForegroundSampleCount(in: bitmap, rows: 0..<(bitmap.pixelsHigh / 2)),
+            40,
+            "主工作区上半部必须可见，不能整体塌缩到底部"
+        )
     }
 
-    private func renderedForegroundSampleCount(in bitmap: NSBitmapImageRep) -> Int {
+    private func renderedForegroundSampleCount(
+        in bitmap: NSBitmapImageRep,
+        rows: Range<Int>? = nil
+    ) -> Int {
         guard let data = bitmap.bitmapData else { return 0 }
         let bytesPerPixel = max(1, bitmap.bitsPerPixel / 8)
         let bytesPerRow = bitmap.bytesPerRow
         let baseline = (Int(data[0]), Int(data[1]), Int(data[2]))
+        let sampledRows = rows ?? 0..<bitmap.pixelsHigh
         var count = 0
 
-        for y in Swift.stride(from: 0, to: bitmap.pixelsHigh, by: 8) {
+        for y in Swift.stride(from: sampledRows.lowerBound, to: sampledRows.upperBound, by: 8) {
             for x in Swift.stride(from: 0, to: bitmap.pixelsWide, by: 8) {
                 let offset = y * bytesPerRow + x * bytesPerPixel
                 guard offset + 2 < bitmap.bytesPerRow * bitmap.pixelsHigh else { continue }
@@ -100,6 +196,156 @@ final class CryptoServiceTests: XCTestCase {
             }
         }
         return count
+    }
+
+    func testDeepAccessSequenceRequiresHighestProtectionAndExactOrder() {
+        var sequence = DeepAccessSequence()
+        XCTAssertFalse(sequence.register(index: 0, enabled: false))
+        XCTAssertFalse(sequence.register(index: 1, enabled: true))
+        XCTAssertFalse(sequence.register(index: 0, enabled: true))
+        XCTAssertFalse(sequence.register(index: 1, enabled: true))
+        XCTAssertFalse(sequence.register(index: 2, enabled: true))
+        XCTAssertTrue(sequence.register(index: 3, enabled: true))
+        XCTAssertEqual(sequence.nextIndex, 0)
+    }
+
+    @MainActor
+    func testDeepAccessAuthorizationUsesOnlyCurrentAccountPassword() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "深度工具测试", password: "current-password", confirmation: "current-password")
+
+        XCTAssertFalse(store.authorizeCurrentAccount(password: "wrong-password"))
+        XCTAssertTrue(store.authorizeCurrentAccount(password: "current-password"))
+        XCTAssertEqual(store.state, .unlocked)
+    }
+
+    @MainActor
+    func testSecurityLoggingCanBeDisabledPerAccountAndPersists() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "日志开关", password: "pass", confirmation: "pass")
+        let initialCount = store.securityLogs.count
+
+        store.setSecurityLoggingForCurrentAccount(false)
+        store.recordSecurityEvent(.vaultFileViewed, message: "不应写入")
+        XCTAssertFalse(store.currentAccountSecurityLoggingEnabled)
+        XCTAssertEqual(store.securityLogs.count, initialCount)
+
+        store.lock()
+        XCTAssertTrue(store.unlock(username: "日志开关", password: "pass"))
+        XCTAssertFalse(store.currentAccountSecurityLoggingEnabled)
+        XCTAssertEqual(store.securityLogs.count, initialCount)
+
+        store.setSecurityLoggingForCurrentAccount(true)
+        store.recordSecurityEvent(.vaultFileViewed, message: "重新启用后写入")
+        XCTAssertTrue(store.currentAccountSecurityLoggingEnabled)
+        XCTAssertEqual(store.securityLogs.first?.eventType, .vaultFileViewed)
+    }
+
+    @MainActor
+    func testEncryptedPhotoViewerRendersAtMinimumSize() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sourceURL = directory.appendingPathComponent("photo.png")
+        let sourceImage = NSImage(size: NSSize(width: 160, height: 100))
+        sourceImage.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 160, height: 100).fill()
+        sourceImage.unlockFocus()
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(sourceImage.tiffRepresentation)))
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: sourceURL)
+
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "照片查看", password: "pass", confirmation: "pass")
+        store.importFilesToVault(urls: [sourceURL], deleteOriginals: true)
+        let item = try XCTUnwrap(store.vaultItems.first)
+        let loadedImage = await store.loadVaultImageForViewing(itemID: item.id)
+        let decryptedImage = try XCTUnwrap(loadedImage)
+        XCTAssertGreaterThan(decryptedImage.size.width, 0)
+        XCTAssertGreaterThan(decryptedImage.size.height, 0)
+        let secondLoad = await store.loadVaultImageForViewing(itemID: item.id, recordViewEvent: false)
+        let cachedImage = try XCTUnwrap(secondLoad)
+        XCTAssertTrue(decryptedImage === cachedImage)
+
+        let root = VaultGalleryPreviewView(initialItemID: item.id)
+            .environmentObject(store)
+            .background(Color(nsColor: .windowBackgroundColor))
+        let view = NSHostingView(rootView: root)
+        view.frame = NSRect(x: 0, y: 0, width: 760, height: 590)
+        try await Task.sleep(for: .milliseconds(200))
+        view.layoutSubtreeIfNeeded()
+        let rendered = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rendered)
+        if let snapshotPath = ProcessInfo.processInfo.environment["CIPHERNOTES_GALLERY_SNAPSHOT"],
+           let png = rendered.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: snapshotPath), options: .atomic)
+        }
+
+        XCTAssertGreaterThan(renderedForegroundSampleCount(in: rendered), 50)
+
+        view.frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        view.layoutSubtreeIfNeeded()
+        let expandedViewer = try XCTUnwrap(firstDescendant(of: VaultImageScrollView.self, in: view))
+        XCTAssertGreaterThan(expandedViewer.frame.width, 1_100)
+        XCTAssertGreaterThan(expandedViewer.frame.height, 650)
+    }
+
+    @MainActor
+    func testNativePhotoViewerAppliesZoomAndReturnsToFit() {
+        let image = NSImage(size: NSSize(width: 2400, height: 1600))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 2400, height: 1600).fill()
+        image.unlockFocus()
+
+        let viewer = VaultImageScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+        viewer.setImage(image)
+        viewer.layoutSubtreeIfNeeded()
+        let fitMagnification = viewer.magnification
+
+        viewer.setRelativeZoom(2)
+        XCTAssertEqual(viewer.relativeZoom, 2, accuracy: 0.02)
+        XCTAssertGreaterThan(viewer.magnification, fitMagnification)
+
+        viewer.setRelativeZoom(1)
+        XCTAssertEqual(viewer.relativeZoom, 1, accuracy: 0.02)
+        XCTAssertEqual(viewer.magnification, fitMagnification, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testNativePhotoViewerZoomsAroundRequestedImagePoint() {
+        let image = NSImage(size: NSSize(width: 2400, height: 1600))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 2400, height: 1600).fill()
+        image.unlockFocus()
+
+        let viewer = VaultImageScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+        viewer.setImage(image)
+        viewer.layoutSubtreeIfNeeded()
+
+        let requestedPoint = NSPoint(x: 1500, y: 900)
+        let before = viewer.documentVisibleRect
+        let horizontalPosition = (requestedPoint.x - before.minX) / before.width
+        let verticalPosition = (requestedPoint.y - before.minY) / before.height
+
+        viewer.setRelativeZoom(2, centeredAt: requestedPoint)
+
+        let after = viewer.documentVisibleRect
+        XCTAssertEqual((requestedPoint.x - after.minX) / after.width, horizontalPosition, accuracy: 0.01)
+        XCTAssertEqual((requestedPoint.y - after.minY) / after.height, verticalPosition, accuracy: 0.01)
+    }
+
+    func testVaultViewerRecognizesLegacyFilesByExtension() {
+        XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "photo.HEIC", contentType: nil, byteCount: 1)), .image)
+        XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "clip.mov", contentType: nil, byteCount: 1)), .video)
+        XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "voice.m4a", contentType: nil, byteCount: 1)), .audio)
+        XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "manual.pdf", contentType: nil, byteCount: 1)), .pdf)
+        XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "notes.md", contentType: nil, byteCount: 1)), .text)
     }
 
     func testEncryptionRoundTrip() throws {
@@ -427,28 +673,31 @@ final class CryptoServiceTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testMultipleVaultFilesDeleteOriginalsAndStaySeparateFromNotes() async throws {
-        try await MainActor.run {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            let url = directory.appendingPathComponent("vault.json")
-            defer { try? FileManager.default.removeItem(at: directory) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = directory.appendingPathComponent("vault.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
 
-            let firstURL = directory.appendingPathComponent("a.jpg")
-            let secondURL = directory.appendingPathComponent("b.pdf")
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try Data("PHOTO-A".utf8).write(to: firstURL)
-            try Data("PDF-B".utf8).write(to: secondURL)
+        let firstURL = directory.appendingPathComponent("a.jpg")
+        let secondURL = directory.appendingPathComponent("b.pdf")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("PHOTO-A".utf8).write(to: firstURL)
+        try Data("PDF-B".utf8).write(to: secondURL)
 
-            let store = VaultStore(vaultURL: url)
-            store.registerUser(username: "safe", password: "pass", confirmation: "pass")
-            _ = store.addNote()
-            store.importFilesToVault(urls: [firstURL, secondURL], deleteOriginals: true)
+        let store = VaultStore(vaultURL: url)
+        store.registerUser(username: "safe", password: "pass", confirmation: "pass")
+        _ = store.addNote()
+        store.importFilesToVault(urls: [firstURL, secondURL], deleteOriginals: true)
 
-            XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
-            XCTAssertFalse(FileManager.default.fileExists(atPath: secondURL.path))
-            XCTAssertEqual(store.vaultItems.map(\.fileName).sorted(), ["a.jpg", "b.pdf"])
-            XCTAssertTrue(store.notes.allSatisfy { $0.attachments.isEmpty })
+        let deadline = Date().addingTimeInterval(5)
+        while store.vaultImportJobs.contains(where: \.isActive), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondURL.path))
+        XCTAssertEqual(store.vaultItems.map(\.fileName).sorted(), ["a.jpg", "b.pdf"])
+        XCTAssertTrue(store.notes.allSatisfy { $0.attachments.isEmpty })
     }
 
     @MainActor
@@ -487,6 +736,10 @@ final class CryptoServiceTests: XCTestCase {
         }
         let crossingRange = (4 * 1024 * 1024 - 37)..<(4 * 1024 * 1024 + 71)
         XCTAssertEqual(try media.reader.read(range: crossingRange), payload.subdata(in: crossingRange))
+        let firstReadOperations = media.reader.decryptionOperationCount
+        XCTAssertEqual(firstReadOperations, 2)
+        XCTAssertEqual(try media.reader.read(range: crossingRange), payload.subdata(in: crossingRange))
+        XCTAssertEqual(media.reader.decryptionOperationCount, firstReadOperations)
 
         let attachmentRoot = directory.appendingPathComponent("Attachments")
         let encryptedFiles = (FileManager.default.enumerator(at: attachmentRoot, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
@@ -877,10 +1130,10 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertNil(store.importSharedNote(data: Data("not a package".utf8), sharePassword: "share"))
             XCTAssertTrue(store.securityLogs.contains { $0.eventType == .protectedActionBlocked && $0.result == .blocked })
 
-            store.clearSecurityLogs(currentPassword: "wrong", confirmationText: "清空安全日志")
+            store.clearSecurityLogs(currentPassword: "wrong")
             XCTAssertTrue(store.securityLogs.contains { $0.eventType == .protectedActionBlocked })
 
-            store.clearSecurityLogs(currentPassword: "pass", confirmationText: "清空安全日志")
+            store.clearSecurityLogs(currentPassword: "pass")
             XCTAssertEqual(store.securityLogs.count, 1)
             XCTAssertEqual(store.securityLogs.first?.eventType, .securityLogsCleared)
         }
@@ -927,6 +1180,62 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.notes.first?.title, "Fake")
             XCTAssertEqual(store.notes.first?.body, "Fake content")
         }
+    }
+
+    @MainActor
+    func testSuperPrivateSpaceRequiresHighestProtectionAndKeepsDataSeparate() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = directory.appendingPathComponent("vault.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let privateFileURL = directory.appendingPathComponent("private-photo.txt")
+        try Data("PRIVATE FILE CONTENT".utf8).write(to: privateFileURL)
+
+        let store = VaultStore(vaultURL: url)
+        store.registerUser(username: "owner", password: "real-pass", confirmation: "real-pass")
+        let regularNoteID = store.addNote()
+        store.updateNote(id: regularNoteID, title: "Regular space", body: "Regular content")
+
+        XCTAssertFalse(store.enterSuperPrivateSpace(password: "real-pass"))
+        XCTAssertEqual(store.errorMessage, "请先开启最高保护模式")
+
+        store.setAdvancedDataProtectionForCurrentAccount(true)
+        XCTAssertFalse(store.enterSuperPrivateSpace(password: "wrong-pass"))
+        XCTAssertFalse(store.isSuperPrivateSession)
+        XCTAssertEqual(store.notes.first?.title, "Regular space")
+
+        XCTAssertTrue(store.enterSuperPrivateSpace(password: "real-pass"))
+        XCTAssertTrue(store.isSuperPrivateSession)
+        XCTAssertTrue(store.notes.isEmpty)
+        XCTAssertTrue(store.vaultItems.isEmpty)
+        XCTAssertTrue(store.securityLogs.isEmpty)
+        XCTAssertEqual(store.autoLockMinutes, 1)
+
+        let privateNoteID = store.addNote()
+        store.updateNote(id: privateNoteID, title: "Private space", body: "Private content")
+        store.importFilesToVault(urls: [privateFileURL], deleteOriginals: true)
+        XCTAssertEqual(store.vaultItems.first?.fileName, "private-photo.txt")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: privateFileURL.path))
+
+        store.setAdvancedDataProtectionForCurrentAccount(false)
+        XCTAssertTrue(store.currentAccountAdvancedDataProtectionEnabled)
+        XCTAssertEqual(store.errorMessage, "请先退出超级隐私空间")
+
+        store.lock()
+        XCTAssertTrue(store.unlock(username: "owner", password: "real-pass"))
+        XCTAssertFalse(store.isSuperPrivateSession)
+        XCTAssertEqual(store.notes.map(\.title), ["Regular space"])
+        XCTAssertTrue(store.vaultItems.isEmpty)
+
+        XCTAssertTrue(store.enterSuperPrivateSpace(password: "real-pass"))
+        XCTAssertEqual(store.notes.map(\.title), ["Private space"])
+        XCTAssertEqual(store.vaultItems.map(\.fileName), ["private-photo.txt"])
+
+        let diskText = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertFalse(diskText.contains("Regular space"))
+        XCTAssertFalse(diskText.contains("Private space"))
+        XCTAssertFalse(diskText.contains("private-photo.txt"))
     }
 
     func testDecoyPasswordCanEraseLocalVaultWhenConfigured() async throws {
@@ -976,4 +1285,15 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertEqual(store.errorMessage, "请先开启最高保护模式，再设置虚假密码")
         }
     }
+}
+
+@MainActor
+private func firstDescendant<T: NSView>(of type: T.Type, in root: NSView) -> T? {
+    if let match = root as? T { return match }
+    for subview in root.subviews {
+        if let match = firstDescendant(of: type, in: subview) {
+            return match
+        }
+    }
+    return nil
 }

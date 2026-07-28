@@ -14,9 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.1.7` · 允许系统截屏.
-- `密笺-1.1.7.pkg`: recommended public installer.
-- `密笺-1.1.7.zip`: public portable archive.
+- Current release: `1.1.13` · 登录界面重构.
+- `密笺-1.1.13.pkg`: recommended public installer.
+- `密笺-1.1.13.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -141,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.1.7
-git push origin v1.1.7
+git tag v1.1.13
+git push origin v1.1.13
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +174,52 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.1.13 - 登录界面重构
+
+- Rebuilds login, registration, and recovery as one compact native macOS authentication surface.
+- Centers the interface across minimum and full-screen windows and removes the locked-state footer.
+- Uses a full-width account menu and primary action while preserving a stable three-mode selector.
+- Fixes first-frame mode mismatch, transition clipping, and oversized empty glass regions.
+- Adds dedicated login and registration visual regression snapshots.
+
+### 1.1.12 - 安全与稳定性修复
+
+- Strengthens Highest Protection session isolation and clears active workspace data before switching security contexts.
+- Keeps protected notes and vault metadata in an independently encrypted payload compatible with existing vaults.
+- Simplifies local security-log clearing to one password-confirmed macOS dialog.
+- Adds regression coverage for encryption, isolation, lock-and-login restoration, and log authorization.
+
+### 1.1.11 - 全屏查看器适配
+
+- Replaces the fixed preview sheet with a full-workspace macOS viewer that grows with the application window.
+- Adds a native system full-screen toggle and responds continuously to entering and leaving full screen.
+- Recalculates fit-to-window images after viewport changes while preserving deliberate manual zoom.
+- Adds a 1440x900 regression check for the real image viewport, not only the outer container.
+
+### 1.1.10 - 原生焦点缩放与查看器修复
+
+- Double-click and macOS smart zoom now magnify around the clicked image pixel instead of the overall image center.
+- Keeps the clicked pixel at the same pointer-relative viewport position during magnification.
+- Adds an AppKit regression test for point-anchored image zoom.
+
+### 1.1.9 - 原生媒体查看器与性能重构
+
+- Rebuilds the photo, video, audio, PDF, and text viewer as a dedicated module with one consistent file-kind model.
+- Reads large encrypted images through random-access ImageIO and caches only bounded decoded results instead of assembling the whole source in memory.
+- Adds native pinch/double-click/keyboard zoom, centered fit-to-window, lazy thumbnails, adjacent preloading, and smooth previous/next switching.
+- Uses native video controls, reduces audio-seek churn, and reliably stops playback when leaving a file.
+- Moves multi-photo imports off the main thread and prevents stale preview tasks from restoring sensitive images after lock.
+- Adds regression coverage for cache reuse, encrypted chunk reuse, native zoom, background multi-file import, and legacy file types.
+
+### 1.1.8 - 照片保险柜与稳定性更新
+
+- Adds full-page drag and drop for encrypted vault imports with a clear original-file removal warning.
+- Adds a continuous photo/video viewer with thumbnails, arrow-key navigation, zoom, and media scrubbing.
+- Uses native macOS pinch zoom, double-click zoom, panning, and fit-to-window behavior without artificial trackpad haptics.
+- Downsamples large images off the main thread and streams encrypted video/audio without plaintext temporary files.
+- Adds a per-account switch for future security-log recording.
+- Fixes the collapsed workspace layout and retains standard macOS screenshot support.
 
 ### 1.1.7 - 允许系统截屏
 

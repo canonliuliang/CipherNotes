@@ -32,6 +32,14 @@ final class EncryptedAttachmentReader: @unchecked Sendable {
     private let rawKey: Data
     private let chunks: [Chunk]
     private let legacyCiphertext: Data?
+    private var legacyCleartextCache: Data?
+    private let cacheLock = NSLock()
+    private let inputLock = NSLock()
+    private var persistentInput: FileHandle?
+    private var decryptedChunkCache: [Int: Data] = [:]
+    private var decryptedChunkOrder: [Int] = []
+    private var decryptionOperations = 0
+    private let maximumCachedChunks = 3
 
     init(url: URL, rawKey: Data, magic: Data, maximumEncryptedChunkSize: Int, encryptedChunkOverhead: Int) throws {
         self.url = url
@@ -89,19 +97,34 @@ final class EncryptedAttachmentReader: @unchecked Sendable {
         guard lower < upper else { return Data() }
 
         if let legacyCiphertext {
+            cacheLock.lock()
+            if let cached = legacyCleartextCache {
+                cacheLock.unlock()
+                return cached.subdata(in: lower..<upper)
+            }
+            cacheLock.unlock()
             let cleartext = try CryptoService.open(legacyCiphertext, using: .init(data: rawKey))
+            cacheLock.lock()
+            legacyCleartextCache = cleartext
+            decryptionOperations += 1
+            cacheLock.unlock()
             return cleartext.subdata(in: lower..<upper)
         }
 
-        let input = try FileHandle(forReadingFrom: url)
-        defer { try? input.close() }
+        inputLock.lock()
+        defer { inputLock.unlock() }
+        let input: FileHandle
+        if let persistentInput {
+            input = persistentInput
+        } else {
+            input = try FileHandle(forReadingFrom: url)
+            persistentInput = input
+        }
         var output = Data()
         output.reserveCapacity(upper - lower)
-        for chunk in chunks where chunk.plaintextOffset < upper && chunk.plaintextOffset + chunk.plaintextLength > lower {
-            try input.seek(toOffset: chunk.encryptedOffset)
-            let encrypted = try Self.readExact(from: input, count: chunk.encryptedLength)
-            let cleartext = try CryptoService.open(encrypted, using: .init(data: rawKey))
-            guard cleartext.count == chunk.plaintextLength else { throw VaultError.corruptVault }
+        for (index, chunk) in chunks.enumerated()
+        where chunk.plaintextOffset < upper && chunk.plaintextOffset + chunk.plaintextLength > lower {
+            let cleartext = try decryptedChunk(at: index, chunk: chunk, input: input)
             let localLower = max(0, lower - chunk.plaintextOffset)
             let localUpper = min(cleartext.count, upper - chunk.plaintextOffset)
             output.append(cleartext.subdata(in: localLower..<localUpper))
@@ -115,10 +138,89 @@ final class EncryptedAttachmentReader: @unchecked Sendable {
         return try read(range: 0..<byteCount)
     }
 
+    var decryptionOperationCount: Int {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return decryptionOperations
+    }
+
+    func makeRandomAccessDataProvider() -> CGDataProvider? {
+        guard byteCount > 0 else { return nil }
+        let context = Unmanaged.passRetained(EncryptedImageProviderContext(reader: self))
+        var callbacks = CGDataProviderDirectCallbacks(
+            version: 0,
+            getBytePointer: nil,
+            releaseBytePointer: nil,
+            getBytesAtPosition: { info, buffer, position, count in
+                guard let info else { return 0 }
+                let context = Unmanaged<EncryptedImageProviderContext>.fromOpaque(info).takeUnretainedValue()
+                guard position >= 0, count > 0 else { return 0 }
+                let start = Int(position)
+                guard start < context.reader.byteCount else { return 0 }
+                let end = start + min(count, context.reader.byteCount - start)
+                guard start < end, let data = try? context.reader.read(range: start..<end) else { return 0 }
+                data.copyBytes(to: buffer.assumingMemoryBound(to: UInt8.self), count: data.count)
+                return data.count
+            },
+            releaseInfo: { info in
+                guard let info else { return }
+                Unmanaged<EncryptedImageProviderContext>.fromOpaque(info).release()
+            }
+        )
+        guard let provider = CGDataProvider(
+            directInfo: context.toOpaque(),
+            size: off_t(byteCount),
+            callbacks: &callbacks
+        ) else {
+            context.release()
+            return nil
+        }
+        return provider
+    }
+
+    private func decryptedChunk(at index: Int, chunk: Chunk, input: FileHandle) throws -> Data {
+        cacheLock.lock()
+        if let cached = decryptedChunkCache[index] {
+            decryptedChunkOrder.removeAll { $0 == index }
+            decryptedChunkOrder.append(index)
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        try input.seek(toOffset: chunk.encryptedOffset)
+        let encrypted = try Self.readExact(from: input, count: chunk.encryptedLength)
+        let cleartext = try CryptoService.open(encrypted, using: .init(data: rawKey))
+        guard cleartext.count == chunk.plaintextLength else { throw VaultError.corruptVault }
+
+        cacheLock.lock()
+        decryptionOperations += 1
+        decryptedChunkCache[index] = cleartext
+        decryptedChunkOrder.removeAll { $0 == index }
+        decryptedChunkOrder.append(index)
+        while decryptedChunkOrder.count > maximumCachedChunks {
+            decryptedChunkCache[decryptedChunkOrder.removeFirst()] = nil
+        }
+        cacheLock.unlock()
+        return cleartext
+    }
+
     private static func readExact(from handle: FileHandle, count: Int) throws -> Data {
         let data = try handle.read(upToCount: count) ?? Data()
         guard data.count == count else { throw VaultError.corruptVault }
         return data
+    }
+
+    deinit {
+        try? persistentInput?.close()
+    }
+}
+
+private final class EncryptedImageProviderContext: @unchecked Sendable {
+    let reader: EncryptedAttachmentReader
+
+    init(reader: EncryptedAttachmentReader) {
+        self.reader = reader
     }
 }
 
@@ -174,6 +276,7 @@ final class VaultMediaPlayer: ObservableObject {
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
+    private var cleanedUp = false
 
     init(resource: VaultMediaResource) {
         loader = VaultMediaResourceLoader(resource: resource)
@@ -230,13 +333,30 @@ final class VaultMediaPlayer: ObservableObject {
     }
 
     func seek(to seconds: TimeInterval) {
-        player.seek(to: CMTime(seconds: min(max(seconds, 0), max(duration, 0)), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        let target = CMTime(seconds: min(max(seconds, 0), max(duration, 0)), preferredTimescale: 600)
+        let tolerance = CMTime(seconds: 0.08, preferredTimescale: 600)
+        player.seek(to: target, toleranceBefore: tolerance, toleranceAfter: tolerance)
+    }
+
+    func skip(by seconds: TimeInterval) {
+        seek(to: currentTime + seconds)
     }
 
     func stopAndClear() {
+        guard !cleanedUp else { return }
+        cleanedUp = true
         player.pause()
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+        statusObservation?.invalidate()
+        statusObservation = nil
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
         player.replaceCurrentItem(with: nil)
         isPlaying = false
     }
-
 }
