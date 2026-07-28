@@ -127,24 +127,69 @@ final class VaultStore: ObservableObject {
     private var authenticationFailureCounts: [String: Int] = [:]
     private var authenticationBlockedUntil: [String: Date] = [:]
     private var lastActivity = Date()
-    private struct PreviewCacheEntry {
-        let image: NSImage
-        let cost: Int
-        var lastAccess: UInt64
+
+    private final class ImageCache: @unchecked Sendable {
+        private let cache = NSCache<NSUUID, NSImage>()
+        private let lock = NSLock()
+        private var keys = Set<UUID>()
+
+        init(totalCostLimit: Int, countLimit: Int) {
+            cache.totalCostLimit = totalCostLimit
+            cache.countLimit = countLimit
+            cache.evictsObjectsWithDiscardedContent = true
+        }
+
+        func object(forKey key: UUID) -> NSImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            return cache.object(forKey: key as NSUUID)
+        }
+
+        func setObject(_ obj: NSImage, forKey key: UUID, cost: Int) {
+            lock.lock()
+            defer { lock.unlock() }
+            cache.setObject(obj, forKey: key as NSUUID, cost: cost)
+            keys.insert(key)
+        }
+
+        func removeObject(forKey key: UUID) {
+            lock.lock()
+            defer { lock.unlock() }
+            cache.removeObject(forKey: key as NSUUID)
+            keys.remove(key)
+        }
+
+        func removeAll() {
+            lock.lock()
+            defer { lock.unlock() }
+            cache.removeAllObjects()
+            keys.removeAll()
+        }
+
+        var isEmpty: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return keys.isEmpty
+        }
+
+        subscript(key: UUID) -> NSImage? {
+            get { object(forKey: key) }
+            set {
+                if let image = newValue {
+                    setObject(image, forKey: key, cost: 0)
+                } else {
+                    removeObject(forKey: key)
+                }
+            }
+        }
     }
-    private var imagePreviewCache: [UUID: PreviewCacheEntry] = [:]
-    private var viewerImageCache: [UUID: PreviewCacheEntry] = [:]
+
+    private let imagePreviewCache = ImageCache(totalCostLimit: 48 * 1024 * 1024, countLimit: 32)
+    private let viewerImageCache = ImageCache(totalCostLimit: 192 * 1024 * 1024, countLimit: 3)
     private var thumbnailLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
     private var viewerImageLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
     private var viewerPreloadTasks: [UUID: Task<Void, Never>] = [:]
-    private var previewCacheClock: UInt64 = 0
     private var previewCacheGeneration: UInt64 = 0
-    private var previewCacheCost = 0
-    private var viewerCacheCost = 0
-    nonisolated private static let maxPreviewCacheCost = 48 * 1024 * 1024
-    nonisolated private static let maxPreviewCacheItems = 32
-    nonisolated private static let maxViewerCacheCost = 192 * 1024 * 1024
-    nonisolated private static let maxViewerCacheItems = 3
     // Keep encryption of moderately sized files off the main actor. Tiny files
     // still use the synchronous path to avoid task setup overhead.
     nonisolated private static let backgroundImportThresholdBytes = 4 * 1024 * 1024
@@ -244,7 +289,7 @@ final class VaultStore: ObservableObject {
             securityLogs.removeAll(keepingCapacity: false)
             isDecoySession = false
             isSuperPrivateSession = false
-            imagePreviewCache.removeAll(keepingCapacity: false)
+            imagePreviewCache.removeAll()
             signedInUsername = nil
             userCount = 0
             accounts = []
@@ -279,7 +324,7 @@ final class VaultStore: ObservableObject {
             securityLogs.removeAll(keepingCapacity: false)
             isDecoySession = false
             isSuperPrivateSession = false
-            imagePreviewCache.removeAll(keepingCapacity: false)
+            imagePreviewCache.removeAll()
             signedInUsername = nil
             userCount = 0
             accounts = []
@@ -730,7 +775,7 @@ final class VaultStore: ObservableObject {
             refreshAccounts(from: file)
             if currentUserID == userID, enabled {
                 autoLockMinutes = 1
-                imagePreviewCache.removeAll(keepingCapacity: false)
+                imagePreviewCache.removeAll()
             }
             if currentUserID == userID {
                 recordSecurityEvent(enabled ? .advancedProtectionEnabled : .advancedProtectionDisabled, message: enabled ? "缩略图、复制、导出和共享已限制" : "高级数据保护已关闭")
@@ -1358,7 +1403,7 @@ final class VaultStore: ObservableObject {
         guard vaultItems.contains(where: { $0.id == itemID }), let vaultKey, let currentUserID else { return nil }
         do {
             let data = try readAttachmentData(id: itemID, userID: currentUserID, rawKey: vaultKey)
-            removePreviewCacheEntry(for: itemID)
+            imagePreviewCache.removeObject(forKey: itemID)
             recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
             return data
         } catch {
@@ -1377,10 +1422,8 @@ final class VaultStore: ObservableObject {
         thumbnailLoadTasks.removeAll(keepingCapacity: false)
         viewerImageLoadTasks.removeAll(keepingCapacity: false)
         viewerPreloadTasks.removeAll(keepingCapacity: false)
-        imagePreviewCache.removeAll(keepingCapacity: false)
-        viewerImageCache.removeAll(keepingCapacity: false)
-        previewCacheCost = 0
-        viewerCacheCost = 0
+        imagePreviewCache.removeAll()
+        viewerImageCache.removeAll()
         if recordEvent && hadPreviewCache {
             recordSecurityEvent(.protectedActionBlocked, message: "锁定时已清理保险柜预览缓存")
         }
@@ -1431,11 +1474,8 @@ final class VaultStore: ObservableObject {
 
     func previewVaultImage(itemID: UUID) async -> NSImage? {
         guard !currentAccountAdvancedDataProtectionEnabled else { return nil }
-        if var cached = imagePreviewCache[itemID] {
-            previewCacheClock &+= 1
-            cached.lastAccess = previewCacheClock
-            imagePreviewCache[itemID] = cached
-            return cached.image
+        if let cached = imagePreviewCache.object(forKey: itemID) {
+            return cached
         }
         guard let item = vaultItems.first(where: { $0.id == itemID }),
               VaultFileKind(item) == .image,
@@ -1463,14 +1503,11 @@ final class VaultStore: ObservableObject {
     }
 
     func loadVaultImageForViewing(itemID: UUID, recordViewEvent: Bool = true) async -> NSImage? {
-        if var cached = viewerImageCache[itemID] {
-            previewCacheClock &+= 1
-            cached.lastAccess = previewCacheClock
-            viewerImageCache[itemID] = cached
+        if let cached = viewerImageCache.object(forKey: itemID) {
             if recordViewEvent {
                 recordSecurityEvent(.vaultFileViewed, message: "已在应用内查看 1 个保险柜文件")
             }
-            return cached.image
+            return cached
         }
         guard let item = vaultItems.first(where: { $0.id == itemID }),
               VaultFileKind(item) == .image,
@@ -1602,56 +1639,22 @@ final class VaultStore: ObservableObject {
     }
 
     private func insertPreviewImage(_ image: NSImage, for itemID: UUID) {
-        removePreviewCacheEntry(for: itemID)
-        previewCacheClock &+= 1
-        let entry = PreviewCacheEntry(image: image, cost: Self.imageCost(image), lastAccess: previewCacheClock)
-        imagePreviewCache[itemID] = entry
-        previewCacheCost += entry.cost
-        evictPreviewCacheIfNeeded()
+        let cost = Self.imageCost(image)
+        imagePreviewCache.setObject(image, forKey: itemID, cost: cost)
     }
 
     private func insertViewerImage(_ image: NSImage, for itemID: UUID) {
-        removeViewerCacheEntry(for: itemID)
-        previewCacheClock &+= 1
-        let entry = PreviewCacheEntry(image: image, cost: Self.imageCost(image), lastAccess: previewCacheClock)
-        viewerImageCache[itemID] = entry
-        viewerCacheCost += entry.cost
-        evictViewerCacheIfNeeded()
-    }
-
-    private func evictPreviewCacheIfNeeded() {
-        while imagePreviewCache.count > Self.maxPreviewCacheItems || previewCacheCost > Self.maxPreviewCacheCost {
-            guard let oldest = imagePreviewCache.min(by: { $0.value.lastAccess < $1.value.lastAccess }) else { break }
-            removePreviewCacheEntry(for: oldest.key)
-        }
-    }
-
-    private func evictViewerCacheIfNeeded() {
-        while viewerImageCache.count > Self.maxViewerCacheItems || viewerCacheCost > Self.maxViewerCacheCost {
-            guard let oldest = viewerImageCache.min(by: { $0.value.lastAccess < $1.value.lastAccess }) else { break }
-            removeViewerCacheEntry(for: oldest.key)
-        }
+        let cost = Self.imageCost(image)
+        viewerImageCache.setObject(image, forKey: itemID, cost: cost)
     }
 
     nonisolated private static func imageCost(_ image: NSImage) -> Int {
         image.representations.first.map { max(1, $0.pixelsWide) * max(1, $0.pixelsHigh) * 4 } ?? 4
     }
 
-    private func removePreviewCacheEntry(for itemID: UUID) {
-        if let removed = imagePreviewCache.removeValue(forKey: itemID) {
-            previewCacheCost = max(0, previewCacheCost - removed.cost)
-        }
-    }
-
-    private func removeViewerCacheEntry(for itemID: UUID) {
-        if let removed = viewerImageCache.removeValue(forKey: itemID) {
-            viewerCacheCost = max(0, viewerCacheCost - removed.cost)
-        }
-    }
-
     private func cleanupVaultItemResources(itemID: UUID) {
-        removePreviewCacheEntry(for: itemID)
-        removeViewerCacheEntry(for: itemID)
+        imagePreviewCache.removeObject(forKey: itemID)
+        viewerImageCache.removeObject(forKey: itemID)
         thumbnailLoadTasks[itemID]?.cancel()
         viewerImageLoadTasks[itemID]?.cancel()
         viewerPreloadTasks[itemID]?.cancel()
@@ -1762,7 +1765,7 @@ final class VaultStore: ObservableObject {
 
             notes.removeAll(keepingCapacity: false)
             vaultItems.removeAll(keepingCapacity: false)
-            imagePreviewCache.removeAll(keepingCapacity: false)
+            imagePreviewCache.removeAll()
             let keyByteCount = vaultKey?.count ?? 0
             vaultKey?.resetBytes(in: 0..<keyByteCount)
             vaultKey = nil
@@ -2089,7 +2092,7 @@ final class VaultStore: ObservableObject {
 
     private func finishUnlock(file: VaultFile, user: UserRecord, rawKey: Data, username: String) throws {
         let payload = try decodePayload(from: user.encryptedNotes, rawKey: rawKey)
-        imagePreviewCache.removeAll(keepingCapacity: false)
+        imagePreviewCache.removeAll()
         notes = payload.notes
         vaultItems = payload.vaultItems
         securityLogs = Array(payload.securityLogs.sorted { $0.timestamp > $1.timestamp }.prefix(Self.maxSecurityLogEntries))
@@ -2115,7 +2118,7 @@ final class VaultStore: ObservableObject {
         } else {
             payload = VaultPayload(notes: [], vaultItems: [], securityLogs: [])
         }
-        imagePreviewCache.removeAll(keepingCapacity: false)
+        imagePreviewCache.removeAll()
         notes = payload.notes
         vaultItems = payload.vaultItems
         securityLogs = Array(payload.securityLogs.sorted { $0.timestamp > $1.timestamp }.prefix(Self.maxSecurityLogEntries))
@@ -2198,7 +2201,7 @@ final class VaultStore: ObservableObject {
         notes.removeAll(keepingCapacity: false)
         vaultItems.removeAll(keepingCapacity: false)
         securityLogs.removeAll(keepingCapacity: false)
-        imagePreviewCache.removeAll(keepingCapacity: false)
+        imagePreviewCache.removeAll()
         signedInUsername = nil
         userCount = 0
         accounts = []
@@ -2630,7 +2633,7 @@ final class VaultStore: ObservableObject {
         state = Self.initialState(for: vaultURL)
         userCount = Self.userCount(at: vaultURL)
         accounts = Self.accountSummaries(at: vaultURL)
-        imagePreviewCache.removeAll(keepingCapacity: false)
+        imagePreviewCache.removeAll()
         cleanOrphanedAttachments()
         errorMessage = "保险库已从备份还原，请重新登录"
     }
