@@ -578,8 +578,23 @@ final class VaultImageScrollView: NSScrollView {
         guard hasFittedImage else { return }
         let target = fitMagnification * requestedZoom
         guard abs(magnification - target) > 0.005 else { return }
+        let anchor = point ?? documentVisibleRect.center
+        let visibleBefore = documentVisibleRect
+        let horizontalPosition = visibleBefore.width > 0
+            ? (anchor.x - visibleBefore.minX) / visibleBefore.width
+            : 0.5
+        let verticalPosition = visibleBefore.height > 0
+            ? (anchor.y - visibleBefore.minY) / visibleBefore.height
+            : 0.5
         applyingZoom = true
-        setMagnification(target, centeredAt: point ?? documentVisibleRect.center)
+        setMagnification(target, centeredAt: anchor)
+        layoutSubtreeIfNeeded()
+        let visibleAfter = documentVisibleRect
+        contentView.scroll(to: NSPoint(
+            x: anchor.x - horizontalPosition * visibleAfter.width,
+            y: anchor.y - verticalPosition * visibleAfter.height
+        ))
+        reflectScrolledClipView(contentView)
         applyingZoom = false
         onZoomChanged?(requestedZoom)
     }

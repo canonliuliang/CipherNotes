@@ -289,7 +289,8 @@ final class CryptoServiceTests: XCTestCase {
 
         view.frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
         view.layoutSubtreeIfNeeded()
-        let expandedViewer = try XCTUnwrap(firstDescendant(of: VaultImageScrollView.self, in: view))
+        let loadedViewer = await waitForDescendant(of: VaultImageScrollView.self, in: view)
+        let expandedViewer = try XCTUnwrap(loadedViewer)
         XCTAssertGreaterThan(expandedViewer.frame.width, 1_100)
         XCTAssertGreaterThan(expandedViewer.frame.height, 650)
     }
@@ -1294,6 +1295,18 @@ private func firstDescendant<T: NSView>(of type: T.Type, in root: NSView) -> T? 
         if let match = firstDescendant(of: type, in: subview) {
             return match
         }
+    }
+    return nil
+}
+
+@MainActor
+private func waitForDescendant<T: NSView>(of type: T.Type, in root: NSView) async -> T? {
+    for _ in 0..<20 {
+        root.layoutSubtreeIfNeeded()
+        if let match = firstDescendant(of: type, in: root) {
+            return match
+        }
+        try? await Task.sleep(for: .milliseconds(100))
     }
     return nil
 }
