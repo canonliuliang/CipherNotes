@@ -187,30 +187,23 @@ struct RootView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                AppBackground()
-                rootContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .id(hasSeenIntro ? "\(store.state)" : "intro")
-                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
-                    .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: store.state)
-                    .padding(10)
-                if privacyShieldActive && store.state == .unlocked && store.currentAccountAdvancedDataProtectionEnabled {
-                    PrivacyShieldOverlay {
-                        privacyShieldActive = false
-                    }
-                    .transition(.opacity)
-                    .zIndex(10)
+        ZStack(alignment: .topLeading) {
+            AppBackground()
+            rootContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .id(hasSeenIntro ? "\(store.state)" : "intro")
+                .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+                .animation(MotionStyle.animation(reduceMotion: reduceMotion), value: store.state)
+                .padding(10)
+            if privacyShieldActive && store.state == .unlocked && store.currentAccountAdvancedDataProtectionEnabled {
+                PrivacyShieldOverlay {
+                    privacyShieldActive = false
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .layoutPriority(1)
-
-            if store.state == .unlocked {
-                rootFooter
+                .transition(.opacity)
+                .zIndex(10)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minWidth: 860, minHeight: 620)
         .preferredColorScheme(appAppearance.colorScheme)
         .onChange(of: scenePhase) { _, newPhase in
@@ -222,6 +215,12 @@ struct RootView: View {
         }
         .onChange(of: store.currentAccountAdvancedDataProtectionEnabled) { _, enabled in
             if !enabled { privacyShieldActive = false }
+        }
+        .onChange(of: store.state) { _, state in
+            guard state != .unlocked else { return }
+            showingSecurityCenter = false
+            showingUserManagement = false
+            privacyShieldActive = false
         }
         .sheet(isPresented: Binding(get: { store.recoveryCodeToShow != nil }, set: { if !$0 { store.dismissRecoveryCode() } })) {
             RecoveryCodeView(code: store.recoveryCodeToShow ?? "") {
@@ -244,7 +243,7 @@ struct RootView: View {
                 .environmentObject(store)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowUserManagement)) { _ in
-            showingUserManagement = true
+            showingUserManagement = store.state == .unlocked
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowSecurityCenter)) { _ in
             showingSecurityCenter = store.state == .unlocked
@@ -273,51 +272,6 @@ struct RootView: View {
         }
     }
 
-    private var rootFooter: some View {
-        HStack(spacing: 14) {
-            Spacer()
-            Menu {
-                Picker("外观", selection: $appAppearanceRawValue) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.label).tag(appearance.rawValue)
-                    }
-                }
-                Toggle("减少动效", isOn: $reduceMotion)
-            } label: {
-                Label("外观：\(appAppearance.label)", systemImage: "circle.lefthalf.filled")
-            }
-            if !store.accounts.isEmpty {
-                Button {
-                    showingSecurityCenter = true
-                } label: {
-                    Label("安全中心", systemImage: "shield.checkered")
-                }
-                .disabled(store.state != .unlocked)
-                Button {
-                    showingUserManagement = true
-                } label: {
-                    Label("账户与安全", systemImage: "person.2.badge.gearshape")
-                }
-            }
-            Button {
-                showingChangelog = true
-            } label: {
-                Label("更新日志", systemImage: "sparkles")
-            }
-            Button {
-                showingLegalDisclosure = true
-            } label: {
-                Label("法律声明", systemImage: "doc.text.magnifyingglass")
-            }
-        }
-        .buttonStyle(.borderless)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider().opacity(0.55) }
-    }
 }
 
 private struct PrivacyShieldOverlay: View {
@@ -1090,6 +1044,7 @@ struct UnlockView: View {
 
 struct NotesView: View {
     @EnvironmentObject private var store: VaultStore
+    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("noteSort") private var noteSortRawValue = NoteSort.updatedNewest.rawValue
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
     @AppStorage("reduceMotion") private var reduceMotion = false
@@ -1170,10 +1125,6 @@ struct NotesView: View {
         )
     }
 
-    private var currentAccountBadgeText: String {
-        store.isSuperPrivateSession ? "超级隐私空间 · 独立加密" : "本地账户 · 纯免费"
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             workspaceSwitcher
@@ -1243,8 +1194,9 @@ struct NotesView: View {
         }
         .pickerStyle(.segmented)
         .controlSize(.regular)
-        .frame(height: 30)
-        .frame(maxWidth: .infinity)
+        .labelsHidden()
+        .frame(width: 320, height: 30)
+        .frame(maxWidth: .infinity, alignment: .center)
         .contentShape(Rectangle())
     }
 
@@ -1253,14 +1205,6 @@ struct NotesView: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     BrandHeader(compact: true)
-                    if let username = store.signedInUsername {
-                        Label(username, systemImage: "person.crop.circle.fill")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Label(currentAccountBadgeText, systemImage: "crown")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    protectionStatusBadge
                     Picker("筛选", selection: $noteFilterRawValue) {
                         ForEach(NoteFilter.allCases) { filter in
                             Text(filter.rawValue).tag(filter.rawValue)
@@ -1353,7 +1297,11 @@ struct NotesView: View {
                 }
                 .searchable(text: $query, prompt: "搜索已解锁的笔记")
                 HStack {
-                    Button { selection = store.addNote() } label: { Label("新笔记", systemImage: "square.and.pencil") }
+                    if !store.notes.isEmpty {
+                        Button { selection = store.addNote() } label: {
+                            Label("新笔记", systemImage: "square.and.pencil")
+                        }
+                    }
                     Spacer()
                     Text("\(activeNotesCount) 条 · 归档 \(archivedNotesCount)").foregroundStyle(.secondary)
                 }
@@ -1390,20 +1338,6 @@ struct NotesView: View {
         .alert("密笺", isPresented: storeErrorPresented, actions: errorAlertActions, message: errorAlertMessage)
         .sheet(isPresented: $showingExportShare, content: exportShareSheet)
         .sheet(isPresented: $showingImportShare, content: importShareSheet)
-    }
-
-    private var protectionStatusBadge: some View {
-        Label(
-            store.isSuperPrivateSession
-                ? "超级隐私空间 · 最高保护"
-                : (store.currentAccountAdvancedDataProtectionEnabled ? "最高保护模式已开启" : "标准保护模式"),
-            systemImage: store.isSuperPrivateSession
-                ? "lock.shield.fill"
-                : (store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield")
-        )
-        .font(.caption)
-        .foregroundStyle(store.currentAccountAdvancedDataProtectionEnabled ? .mint : .secondary)
-        .lineLimit(1)
     }
 
     private var mainStatusStrip: some View {
@@ -1499,126 +1433,49 @@ struct NotesView: View {
     @ToolbarContentBuilder
     private func workspaceToolbar() -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                NotificationCenter.default.post(name: .cipherNotesShowSecurityCenter, object: nil)
+            } label: {
+                Label("安全中心", systemImage: "shield.checkered")
+            }
+            .help("安全中心")
+
             Menu {
-                if workspaceMode == .notes {
-                    notesToolbarMenu
-                } else {
-                    vaultToolbarMenu
+                Button {
+                    NotificationCenter.default.post(name: .cipherNotesShowUserManagement, object: nil)
+                } label: {
+                    Label("账户与安全…", systemImage: "person.crop.circle.badge.gearshape")
+                }
+                Divider()
+                Picker("外观", selection: $appAppearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance.rawValue)
+                    }
+                }
+                Toggle("减少动效", isOn: $reduceMotion)
+                Divider()
+                Button {
+                    NotificationCenter.default.post(name: .cipherNotesShowChangelog, object: nil)
+                } label: {
+                    Label("更新日志", systemImage: "sparkles")
+                }
+                Button {
+                    NotificationCenter.default.post(name: .cipherNotesShowLegalDisclosure, object: nil)
+                } label: {
+                    Label("法律与隐私声明", systemImage: "doc.text.magnifyingglass")
                 }
             } label: {
-                Image(systemName: "gearshape")
+                Label("应用设置", systemImage: "gearshape")
             }
+            .help("应用设置")
+
             Button {
                 store.lock()
             } label: {
                 Label(store.isSuperPrivateSession ? "退出并锁定" : "锁定", systemImage: "lock.fill")
             }
             .keyboardShortcut("l", modifiers: .command)
-        }
-    }
-
-    @ViewBuilder
-    private var vaultToolbarMenu: some View {
-        Button {
-            NotificationCenter.default.post(name: .cipherNotesOpenVaultImporter, object: nil)
-        } label: {
-            Label("移入照片或文件…", systemImage: "tray.and.arrow.down.fill")
-        }
-        Divider()
-        Button { backupVault() } label: {
-            Label("备份保险库…", systemImage: "externaldrive.badge.plus")
-        }
-        Button { restoreVault() } label: {
-            Label("从备份还原…", systemImage: "arrow.counterclockwise.icloud")
-        }
-        Divider()
-        Button {
-            store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
-        } label: {
-            Label(
-                store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式",
-                systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
-            )
-        }
-        Button {
-            store.rotateRecoveryCode()
-        } label: {
-            Label("生成新的恢复码", systemImage: "key.fill")
-        }
-    }
-
-    @ViewBuilder
-    private var notesToolbarMenu: some View {
-        Picker("自动锁定", selection: $store.autoLockMinutes) {
-            Text("1 分钟").tag(1)
-            Text("5 分钟").tag(5)
-            Text("15 分钟").tag(15)
-            Text("30 分钟").tag(30)
-        }
-        .disabled(store.currentAccountAdvancedDataProtectionEnabled)
-        Divider()
-        Picker("笔记排序", selection: $noteSortRawValue) {
-            ForEach(NoteSort.allCases) { sort in
-                Text(sort.label).tag(sort.rawValue)
-            }
-        }
-        Picker("笔记筛选", selection: $noteFilterRawValue) {
-            ForEach(NoteFilter.allCases) { filter in
-                Text(filter.rawValue).tag(filter.rawValue)
-            }
-        }
-        Divider()
-        Button { togglePinnedSelectedNote() } label: {
-            Label("置顶 / 取消置顶", systemImage: "pin.fill")
-        }
-            .disabled(selectedNote == nil)
-        Button { toggleFavoriteSelectedNote() } label: {
-            Label("收藏 / 取消收藏", systemImage: "star.fill")
-        }
-            .disabled(selectedNote == nil)
-        Button { toggleArchivedSelectedNote() } label: {
-            Label("归档 / 移回", systemImage: "archivebox.fill")
-        }
-            .disabled(selectedNote == nil)
-        Divider()
-        Button { copySelectedNote() } label: {
-            Label("复制所选笔记内容", systemImage: "doc.on.doc")
-        }
-            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button { duplicateSelectedNote() } label: {
-            Label("复制所选笔记为新笔记", systemImage: "plus.square.on.square")
-        }
-            .disabled(selectedNote == nil)
-        Divider()
-        Button { exportSelectedPlainNote(fileExtension: "md") } label: {
-            Label("导出所选笔记为 Markdown…", systemImage: "doc.text")
-        }
-            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button { exportSelectedPlainNote(fileExtension: "txt") } label: {
-            Label("导出所选笔记为 TXT…", systemImage: "doc.plaintext")
-        }
-            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button { showingExportShare = true } label: {
-            Label("导出所选笔记为共享文件", systemImage: "square.and.arrow.up")
-        }
-            .disabled(selectedNote == nil || store.currentAccountAdvancedDataProtectionEnabled)
-        Button { chooseSharedFile() } label: {
-            Label("导入共享文件", systemImage: "square.and.arrow.down")
-        }
-            .disabled(store.currentAccountAdvancedDataProtectionEnabled)
-        Divider()
-        Button {
-            store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
-        } label: {
-            Label(
-                store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护模式" : "开启最高保护模式",
-                systemImage: store.currentAccountAdvancedDataProtectionEnabled ? "shield.lefthalf.filled" : "shield"
-            )
-        }
-        Button {
-            store.rotateRecoveryCode()
-        } label: {
-            Label("生成新的恢复码", systemImage: "key.fill")
+            .help(store.isSuperPrivateSession ? "退出超级隐私空间并锁定" : "立即锁定")
         }
     }
 
@@ -2890,8 +2747,16 @@ struct SecurityCenterView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        sectionTitle("快捷操作", systemImage: "wand.and.stars")
-                        quickActionButtons
+                        sectionTitle("账户恢复", systemImage: "key.fill")
+                        Text("恢复码只在生成时显示一次。重新生成后，旧恢复码会立即失效。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            store.rotateRecoveryCode()
+                        } label: {
+                            Label("生成新的恢复码", systemImage: "key.fill")
+                        }
+                        .buttonStyle(.bordered)
                     }
                     .securitySection()
 
@@ -2989,23 +2854,6 @@ struct SecurityCenterView: View {
             Button("好") { store.errorMessage = nil }
         } message: {
             Text(store.errorMessage ?? "")
-        }
-    }
-
-    private var quickActionButtons: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
-            Button {
-                store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
-            } label: {
-                Label(store.currentAccountAdvancedDataProtectionEnabled ? "关闭最高保护" : "开启最高保护", systemImage: "shield.lefthalf.filled")
-            }
-            .buttonStyle(ClearButtonStyle(prominence: store.currentAccountAdvancedDataProtectionEnabled ? .danger : .primary))
-            Button {
-                store.rotateRecoveryCode()
-            } label: {
-                Label("生成恢复码", systemImage: "key.fill")
-            }
-            .buttonStyle(.bordered)
         }
     }
 
@@ -3623,6 +3471,20 @@ struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let entries: [UpdateLogEntry] = [
+        UpdateLogEntry(
+            id: "1.1.14",
+            version: "1.1.14",
+            title: "界面入口与状态安全整理",
+            dateText: "2026-08-02",
+            items: [
+                "重新整理主窗口功能层级：工具栏只保留安全中心、应用设置和立即锁定，页面内只显示当前区域相关操作。",
+                "移除底部重复快捷栏，以及齿轮菜单、菜单栏和安全中心内重复的最高保护、恢复码与账户入口。",
+                "最高保护模式只在安全中心管理；保险柜导入保留在保险柜标题区；笔记命令保留在笔记菜单和所选项目菜单。",
+                "固定记事本与保险柜切换器的宽高，去除侧栏重复账户状态，并避免空笔记页同时出现两个新建按钮。",
+                "修复锁定状态仍可能打开账户设置，以及自动锁定后安全设置窗口未同步关闭的问题。",
+                "发布版本更新为 1.1.14 (51)，完整测试、打包、网站、README 与 GitHub Release 元数据保持一致。"
+            ]
+        ),
         UpdateLogEntry(
             id: "1.1.13",
             version: "1.1.13",

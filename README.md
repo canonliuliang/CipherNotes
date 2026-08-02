@@ -14,9 +14,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.1.13` · 登录界面重构.
-- `密笺-1.1.13.pkg`: recommended public installer.
-- `密笺-1.1.13.zip`: public portable archive.
+- Current release: `1.1.14` · 界面入口与状态安全整理.
+- `密笺-1.1.14.pkg`: recommended public installer.
+- `密笺-1.1.14.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -141,8 +141,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.1.13
-git push origin v1.1.13
+git tag v1.1.14
+git push origin v1.1.14
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -174,6 +174,14 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.1.14 - 界面入口与状态安全整理
+
+- Consolidates repeated actions into a clear macOS hierarchy: toolbar, contextual page actions, Security Center, and menu bar.
+- Removes the duplicate bottom shortcut bar and repeated protection/recovery commands without removing any capability.
+- Makes Security Center the single place for protection policy and account recovery controls.
+- Fixes locked-state access to account settings and dismisses sensitive settings sheets immediately when the vault locks.
+- Stabilizes the notes/vault switcher and removes repeated status and empty-state actions from the notes sidebar.
 
 ### 1.1.13 - 登录界面重构
 

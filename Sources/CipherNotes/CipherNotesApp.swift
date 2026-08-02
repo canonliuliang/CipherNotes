@@ -33,9 +33,6 @@ struct CipherNotesApp: App {
                     .disabled(store.state != .unlocked)
             }
             CommandMenu("笔记") {
-                Button("新建笔记") { post(.cipherNotesNewNote) }
-                    .keyboardShortcut("n", modifiers: .command)
-                    .disabled(store.state != .unlocked)
                 Button("复制为新笔记") { post(.cipherNotesDuplicateNote) }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(store.state != .unlocked)
@@ -79,16 +76,10 @@ struct CipherNotesApp: App {
                     }
                 }
             }
-            CommandMenu("账号与安全") {
+            CommandMenu("账户与安全") {
                 Button("安全中心…") { post(.cipherNotesShowSecurityCenter) }
                     .disabled(store.state != .unlocked)
                 Button("账户与安全…") { post(.cipherNotesShowUserManagement) }
-                    .disabled(store.accounts.isEmpty)
-                Button(store.currentAccountAdvancedDataProtectionEnabled ? "关闭当前账号高级数据保护" : "开启当前账号高级数据保护") {
-                    store.setAdvancedDataProtectionForCurrentAccount(!store.currentAccountAdvancedDataProtectionEnabled)
-                }
-                .disabled(store.state != .unlocked)
-                Button("生成新的恢复码") { store.rotateRecoveryCode() }
                     .disabled(store.state != .unlocked)
                 Text(store.state == .unlocked ? "当前账户：\(store.signedInUsername ?? "本地账户")" : "纯免费本地版本")
             }
@@ -96,15 +87,13 @@ struct CipherNotesApp: App {
                 Button("立即锁定") { store.lock() }
                     .keyboardShortcut("l", modifiers: .command)
                     .disabled(store.state != .unlocked)
-                Button("账户与安全…") { post(.cipherNotesShowUserManagement) }
-                    .disabled(store.accounts.isEmpty)
                 Button("移入照片或文件…") { post(.cipherNotesAddAttachments) }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .disabled(store.state != .unlocked)
                 Divider()
                 Button("备份保险库…") { post(.cipherNotesBackupVault) }
+                    .disabled(store.state != .unlocked)
                 Button("从备份还原…") { post(.cipherNotesRestoreVault) }
-                Button("生成新的恢复码") { store.rotateRecoveryCode() }
                     .disabled(store.state != .unlocked)
             }
             CommandMenu("外观") {
