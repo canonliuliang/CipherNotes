@@ -89,14 +89,34 @@ struct VaultGalleryPreviewView: View {
     var body: some View {
         GeometryReader { geometry in
             let expanded = geometry.size.width >= 1_100 && geometry.size.height >= 720
-            VStack(alignment: .leading, spacing: expanded ? 12 : 10) {
-                viewerHeader
-                viewerStage
-                if previewableItems.count > 1 {
-                    filmstrip
+            Group {
+                if isWindowFullScreen {
+                    ZStack {
+                        viewerStage
+                        VStack(spacing: 0) {
+                            viewerHeader
+                                .padding(10)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            Spacer(minLength: 0)
+                            if previewableItems.count > 1 {
+                                filmstrip
+                                    .padding(.horizontal, 10)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                        }
+                        .padding(16)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: expanded ? 12 : 10) {
+                        viewerHeader
+                        viewerStage
+                        if previewableItems.count > 1 {
+                            filmstrip
+                        }
+                    }
+                    .padding(expanded ? 20 : 14)
                 }
             }
-            .padding(expanded ? 20 : 14)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(minWidth: 620, idealWidth: 920, maxWidth: .infinity, minHeight: 460, idealHeight: 680, maxHeight: .infinity)
@@ -165,7 +185,7 @@ struct VaultGalleryPreviewView: View {
             if let loadedPreview {
                 previewContent(loadedPreview)
                     .id(currentItemID)
-                    .transition(.opacity)
+                    .transition(MotionStyle.transition(reduceMotion: reduceMotion))
             } else if let loadError, !loading {
                 ContentUnavailableView("无法查看", systemImage: "exclamationmark.triangle", description: Text(loadError))
             }
@@ -175,15 +195,16 @@ struct VaultGalleryPreviewView: View {
                     if loadedPreview != nil {
                         Color.black.opacity(0.08)
                     }
-                    VStack(spacing: 9) {
+                    VStack(spacing: 10) {
+                        Image(systemName: "lock.open.display")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                         ProgressView()
                             .controlSize(.small)
                         Text("正在安全读取")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(14)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .transition(.opacity)
             }
@@ -192,6 +213,8 @@ struct VaultGalleryPreviewView: View {
         .overlay { navigationOverlay }
         .onHover { hoveringStage = $0 }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(MotionStyle.quick(reduceMotion: reduceMotion), value: loading)
+        .animation(MotionStyle.quick(reduceMotion: reduceMotion), value: currentItemID)
     }
 
     @ViewBuilder
@@ -429,10 +452,16 @@ private struct VaultImagePreview: View {
     let image: NSImage
     @State private var zoom: CGFloat = 1
     @State private var fitRequestID = UUID()
+    @State private var actualSizeRequestID = UUID()
 
     var body: some View {
         VStack(spacing: 8) {
-            VaultZoomableImageView(image: image, zoom: $zoom, fitRequestID: fitRequestID)
+            VaultZoomableImageView(
+                image: image,
+                zoom: $zoom,
+                fitRequestID: fitRequestID,
+                actualSizeRequestID: actualSizeRequestID
+            )
                 .background(Color.black.opacity(0.04))
 
             HStack(spacing: 9) {
@@ -464,6 +493,15 @@ private struct VaultImagePreview: View {
                 .help("适合窗口")
                 .keyboardShortcut("0", modifiers: [.command])
 
+                Button {
+                    actualSizeRequestID = UUID()
+                } label: {
+                    Text("1:1")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+                .help("按原始像素查看")
+                .keyboardShortcut("1", modifiers: [.command])
+
                 Text("\(Int(zoom * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -472,6 +510,7 @@ private struct VaultImagePreview: View {
             }
             .buttonStyle(.borderless)
             .frame(height: 26)
+            .animation(.easeOut(duration: 0.16), value: zoom)
         }
     }
 }
@@ -480,6 +519,7 @@ private struct VaultZoomableImageView: NSViewRepresentable {
     let image: NSImage
     @Binding var zoom: CGFloat
     let fitRequestID: UUID
+    let actualSizeRequestID: UUID
 
     func makeNSView(context: Context) -> VaultImageScrollView {
         let scrollView = VaultImageScrollView()
@@ -497,6 +537,7 @@ private struct VaultZoomableImageView: NSViewRepresentable {
         scrollView.setImage(image)
         scrollView.setRelativeZoom(zoom)
         scrollView.applyFitRequest(fitRequestID)
+        scrollView.applyActualSizeRequest(actualSizeRequestID)
     }
 }
 
@@ -512,6 +553,7 @@ final class VaultImageScrollView: NSScrollView {
     private var hasFittedImage = false
     private var lastViewportSize = NSSize.zero
     private var lastFitRequestID: UUID?
+    private var lastActualSizeRequestID: UUID?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -605,6 +647,17 @@ final class VaultImageScrollView: NSScrollView {
         requestedZoom = 1
         hasFittedImage = false
         if bounds.width > 1, bounds.height > 1 { fitImageToWindow() }
+    }
+
+    func applyActualSizeRequest(_ id: UUID) {
+        guard lastActualSizeRequestID != nil else {
+            lastActualSizeRequestID = id
+            return
+        }
+        guard lastActualSizeRequestID != id else { return }
+        lastActualSizeRequestID = id
+        guard hasFittedImage, fitMagnification > 0 else { return }
+        setRelativeZoom(1 / fitMagnification)
     }
 
     var relativeZoom: CGFloat {

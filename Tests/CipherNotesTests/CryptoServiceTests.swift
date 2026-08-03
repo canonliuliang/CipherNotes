@@ -341,6 +341,20 @@ final class CryptoServiceTests: XCTestCase {
         XCTAssertEqual((requestedPoint.y - after.minY) / after.height, verticalPosition, accuracy: 0.01)
     }
 
+    @MainActor
+    func testNativePhotoViewerCanDisplayOneImagePixelPerScreenPoint() {
+        let image = NSImage(size: NSSize(width: 1600, height: 1000))
+        let viewer = VaultImageScrollView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        viewer.setImage(image)
+        viewer.layoutSubtreeIfNeeded()
+        let initialRequest = UUID()
+        viewer.applyActualSizeRequest(initialRequest)
+        viewer.applyActualSizeRequest(UUID())
+
+        XCTAssertEqual(viewer.magnification, 1, accuracy: 0.02)
+        XCTAssertGreaterThan(viewer.relativeZoom, 1)
+    }
+
     func testVaultViewerRecognizesLegacyFilesByExtension() {
         XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "photo.HEIC", contentType: nil, byteCount: 1)), .image)
         XCTAssertEqual(VaultFileKind(VaultAttachment(fileName: "clip.mov", contentType: nil, byteCount: 1)), .video)
@@ -379,6 +393,38 @@ final class CryptoServiceTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
         let hashes = try XCTUnwrap(object["fileHashes"] as? [String: String])
         XCTAssertNotNil(hashes["vault.json"], "manifest keys: \(hashes.keys.sorted())")
+    }
+
+    @MainActor
+    func testTransactionalRestoreReplacesMetadataAndAttachmentsTogether() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let backupRoot = directory.appendingPathComponent("Backups")
+        let sourceURL = directory.appendingPathComponent("private-photo.jpg")
+        let filePayload = Data(repeating: 0xA7, count: 12_000)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+        try filePayload.write(to: sourceURL)
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let store = VaultStore(vaultURL: vaultURL)
+        store.registerUser(username: "restore", password: "pass", confirmation: "pass")
+        let noteID = store.addNote()
+        store.updateNote(id: noteID, title: "备份内容", body: "还原后应保留")
+        store.importFilesToVault(urls: [sourceURL], deleteOriginals: false)
+        let itemID = try XCTUnwrap(store.vaultItems.first?.id)
+        store.backupVault(to: backupRoot)
+        let backup = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(at: backupRoot, includingPropertiesForKeys: nil).first
+        )
+
+        store.updateNote(id: noteID, body: "不应保留的新内容")
+        store.deleteVaultItem(itemID: itemID)
+        store.restoreVault(from: backup, currentPassword: "pass", confirmationText: "还原保险库")
+
+        let reopened = VaultStore(vaultURL: vaultURL)
+        XCTAssertTrue(reopened.unlock(username: "restore", password: "pass"))
+        XCTAssertEqual(reopened.notes.first(where: { $0.id == noteID })?.body, "还原后应保留")
+        XCTAssertEqual(reopened.vaultItems.first?.id, itemID)
+        XCTAssertEqual(reopened.vaultItemData(itemID: itemID), filePayload)
     }
 
     @MainActor
@@ -1285,6 +1331,110 @@ final class CryptoServiceTests: XCTestCase {
             XCTAssertFalse(store.currentAccountDecoyPasswordEnabled)
             XCTAssertEqual(store.errorMessage, "请先开启最高保护模式，再设置虚假密码")
         }
+    }
+
+    func testVaultPersistenceRecoversPreviousValidPayloadAfterInterruptedWrite() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let attachmentsURL = directory.appendingPathComponent("Attachments", isDirectory: true)
+        let original = Data("valid-original".utf8)
+        let replacement = Data("valid-replacement".utf8)
+        let validator: (Data) -> Bool = { $0 == original || $0 == replacement }
+
+        try VaultPersistence.write(original, to: vaultURL, isValidVaultData: validator)
+        try VaultPersistence.write(replacement, to: vaultURL, isValidVaultData: validator)
+        try Data("truncated".utf8).write(to: vaultURL)
+
+        try VaultPersistence.recoverIfNeeded(
+            vaultURL: vaultURL,
+            attachmentsURL: attachmentsURL,
+            isValidVaultData: validator
+        )
+
+        XCTAssertEqual(try Data(contentsOf: vaultURL), original)
+    }
+
+    func testVaultPersistenceCompletesInterruptedPendingWrite() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let pendingURL = directory.appendingPathComponent("vault.pending.json")
+        let journalURL = directory.appendingPathComponent("vault.transaction.json")
+        let attachmentsURL = directory.appendingPathComponent("Attachments", isDirectory: true)
+        let original = Data("valid-original".utf8)
+        let replacement = Data("valid-replacement".utf8)
+        let validator: (Data) -> Bool = { $0 == original || $0 == replacement }
+        try original.write(to: vaultURL)
+        try replacement.write(to: pendingURL)
+        try persistenceJournal(operation: "write", expectedData: replacement).write(to: journalURL)
+
+        try VaultPersistence.recoverIfNeeded(
+            vaultURL: vaultURL,
+            attachmentsURL: attachmentsURL,
+            isValidVaultData: validator
+        )
+
+        XCTAssertEqual(try Data(contentsOf: vaultURL), replacement)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pendingURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    func testVaultPersistenceCompletesInterruptedRestoreWithAttachments() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let attachmentsURL = directory.appendingPathComponent("Attachments", isDirectory: true)
+        let stagingName = ".ciphernotes-restore-test"
+        let stagingURL = directory.appendingPathComponent(stagingName, isDirectory: true)
+        let stagedAttachmentsURL = stagingURL.appendingPathComponent("Attachments", isDirectory: true)
+        let original = Data("valid-original".utf8)
+        let replacement = Data("valid-replacement".utf8)
+        let validator: (Data) -> Bool = { $0 == original || $0 == replacement }
+        try original.write(to: vaultURL)
+        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+        try Data("old-file".utf8).write(to: attachmentsURL.appendingPathComponent("old.bin"))
+        try FileManager.default.createDirectory(at: stagedAttachmentsURL, withIntermediateDirectories: true)
+        try replacement.write(to: stagingURL.appendingPathComponent("vault.json"))
+        try Data("new-file".utf8).write(to: stagedAttachmentsURL.appendingPathComponent("new.bin"))
+        let journal = try persistenceJournal(
+            operation: "restore",
+            expectedData: replacement,
+            stagingDirectoryName: stagingName
+        )
+        try journal.write(to: directory.appendingPathComponent("vault.transaction.json"))
+
+        try VaultPersistence.recoverIfNeeded(
+            vaultURL: vaultURL,
+            attachmentsURL: attachmentsURL,
+            isValidVaultData: validator
+        )
+
+        XCTAssertEqual(try Data(contentsOf: vaultURL), replacement)
+        XCTAssertEqual(
+            try Data(contentsOf: attachmentsURL.appendingPathComponent("new.bin")),
+            Data("new-file".utf8)
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: attachmentsURL.appendingPathComponent("old.bin").path))
+    }
+
+    private func persistenceJournal(
+        operation: String,
+        expectedData: Data,
+        stagingDirectoryName: String? = nil
+    ) throws -> Data {
+        var object: [String: Any] = [
+            "version": 1,
+            "operation": operation,
+            "expectedVaultHash": SHA256.hash(data: expectedData).map { String(format: "%02x", $0) }.joined(),
+            "startedAt": Date().timeIntervalSinceReferenceDate
+        ]
+        if let stagingDirectoryName {
+            object["stagingDirectoryName"] = stagingDirectoryName
+        }
+        return try JSONSerialization.data(withJSONObject: object)
     }
 }
 

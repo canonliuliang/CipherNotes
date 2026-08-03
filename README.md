@@ -6,6 +6,8 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 [Website](https://canonliuliang.github.io/CipherNotes/) · [Download latest release](https://github.com/canonliuliang/CipherNotes/releases/latest) · [Report an issue](https://github.com/canonliuliang/CipherNotes/issues)
 
+Security design: [Threat model](THREAT_MODEL.md) · [Vulnerability reporting](SECURITY.md)
+
 ![CI](https://github.com/canonliuliang/CipherNotes/actions/workflows/ci.yml/badge.svg)
 
 ![CipherNotes main window](docs/media/app-screenshot.png)
@@ -14,9 +16,9 @@ CipherNotes is built for private notes, photos, documents, archives, and other f
 
 Get the latest version from [GitHub Releases](https://github.com/canonliuliang/CipherNotes/releases/latest).
 
-- Current release: `1.1.14` · 界面入口与状态安全整理.
-- `密笺-1.1.14.pkg`: recommended public installer.
-- `密笺-1.1.14.zip`: public portable archive.
+- Current release: `1.1.15` · 安全持久化与原生交互重构.
+- `密笺-1.1.15.pkg`: recommended public installer.
+- `密笺-1.1.15.zip`: public portable archive.
 
 Requires macOS 14 or later.
 
@@ -72,6 +74,8 @@ What is not stored in plaintext:
 - Sensitive security-log object names such as note titles, file names, or note bodies.
 
 If you forget an account password and lose its recovery code, that account's encrypted content cannot be recovered. Other accounts are not master keys.
+
+CipherNotes protects encrypted data at rest and reduces application-controlled leakage. It does not claim to defeat malware, root access on an unlocked Mac, keyloggers, live-memory acquisition, screen capture, or physical SSD forensics after deletion. Read the [threat model](THREAT_MODEL.md) before relying on Highest Protection for a serious physical-access scenario.
 
 ## Data Location
 
@@ -141,8 +145,8 @@ To publish a new public download:
 
 ```sh
 git push origin main
-git tag v1.1.14
-git push origin v1.1.14
+git tag v1.1.15
+git push origin v1.1.15
 ```
 
 If you are using GitHub Desktop and do not want to push tags from Terminal, push `main`, open the repository's Actions tab, choose the `Release` workflow, and run it manually. Leave the tag field empty to use `Packaging/release.env`.
@@ -159,7 +163,7 @@ The `Release` workflow validates the version, runs the package script, creates o
 - `README.md`
 - `Website/index.html`
 - `docs/index.html`
-- the in-app changelog in `Sources/CipherNotes/Views.swift`
+- the in-app changelog in `Sources/CipherNotes/SecurityViews.swift`
 
 This keeps the app version, GitHub download page, website, README, and in-app update log aligned before users see a release.
 
@@ -174,6 +178,16 @@ This keeps the app version, GitHub download page, website, README, and in-app up
 Older vaults can be upgraded from the migration screen. Enter the old username and old master password; the old password becomes the new local account password, and existing notes are preserved. If you do not need the old data, you can discard the old vault and start fresh.
 
 ## Changelog
+
+### 1.1.15 - 安全持久化与原生交互重构
+
+- Adds transaction-journal recovery for interrupted vault writes and restores, including encrypted attachments.
+- Splits the main application surface into focused authentication, security, persistence, backup, import, cache, and chrome modules.
+- Improves the encrypted viewer with full-screen adaptation, anchored native zoom, 1:1 viewing, preload cancellation, and lighter loading feedback.
+- Rebuilds the workspace hierarchy into a stable navigation band, quick overview panel, and content region.
+- Adds account-switch, workspace, protection-state, list, empty-state, and viewer transitions while respecting Reduce Motion.
+- Keeps the in-app changelog focused on the latest 10 versions.
+- Documents the local threat model and validates metadata plus attachments together during backup restoration.
 
 ### 1.1.14 - 界面入口与状态安全整理
 

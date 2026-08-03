@@ -4,95 +4,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-enum VaultImportJobStatus: String, Sendable {
-    case encrypting
-    case paused
-    case cancelling
-    case finished
-    case failed
-    case cancelled
-
-    var label: String {
-        switch self {
-        case .encrypting: "正在加密"
-        case .paused: "已暂停"
-        case .cancelling: "正在取消"
-        case .finished: "已完成"
-        case .failed: "导入失败"
-        case .cancelled: "已取消"
-        }
-    }
-}
-
-struct VaultImportJob: Identifiable, Equatable, Sendable {
-    let id: UUID
-    var fileName: String
-    var byteCount: Int
-    var processedByteCount: Int
-    var status: VaultImportJobStatus
-    var startedAt: Date = .now
-    var updatedAt: Date = .now
-
-    var progress: Double {
-        guard byteCount > 0 else { return status == .finished ? 1 : 0 }
-        return min(1, max(0, Double(processedByteCount) / Double(byteCount)))
-    }
-
-    var isActive: Bool {
-        status == .encrypting || status == .paused || status == .cancelling
-    }
-
-    var estimatedRemainingSeconds: TimeInterval? {
-        guard status == .encrypting, processedByteCount > 0, byteCount > processedByteCount else { return nil }
-        let elapsed = max(0.1, updatedAt.timeIntervalSince(startedAt))
-        let bytesPerSecond = Double(processedByteCount) / elapsed
-        guard bytesPerSecond > 0 else { return nil }
-        return Double(byteCount - processedByteCount) / bytesPerSecond
-    }
-}
-
-private final class VaultImportCancellationToken: @unchecked Sendable {
-    private let condition = NSCondition()
-    private var cancelled = false
-    private var paused = false
-
-    func cancel() {
-        condition.lock()
-        guard !cancelled else { condition.unlock(); return }
-        cancelled = true
-        paused = false
-        condition.broadcast()
-        condition.unlock()
-    }
-
-    func pause() {
-        condition.lock()
-        guard !cancelled else { condition.unlock(); return }
-        paused = true
-        condition.unlock()
-    }
-
-    func resume() {
-        condition.lock()
-        guard !cancelled else { condition.unlock(); return }
-        paused = false
-        condition.broadcast()
-        condition.unlock()
-    }
-
-    func waitIfPaused() {
-        condition.lock()
-        while paused && !cancelled { condition.wait() }
-        condition.unlock()
-    }
-
-    var isCancelled: Bool {
-        condition.lock()
-        defer { condition.unlock() }
-        return cancelled
-    }
-}
-
 @MainActor
 final class VaultStore: ObservableObject {
     @Published private(set) var state: VaultState
@@ -128,64 +39,8 @@ final class VaultStore: ObservableObject {
     private var authenticationBlockedUntil: [String: Date] = [:]
     private var lastActivity = Date()
 
-    private final class ImageCache: @unchecked Sendable {
-        private let cache = NSCache<NSUUID, NSImage>()
-        private let lock = NSLock()
-        private var keys = Set<UUID>()
-
-        init(totalCostLimit: Int, countLimit: Int) {
-            cache.totalCostLimit = totalCostLimit
-            cache.countLimit = countLimit
-            cache.evictsObjectsWithDiscardedContent = true
-        }
-
-        func object(forKey key: UUID) -> NSImage? {
-            lock.lock()
-            defer { lock.unlock() }
-            return cache.object(forKey: key as NSUUID)
-        }
-
-        func setObject(_ obj: NSImage, forKey key: UUID, cost: Int) {
-            lock.lock()
-            defer { lock.unlock() }
-            cache.setObject(obj, forKey: key as NSUUID, cost: cost)
-            keys.insert(key)
-        }
-
-        func removeObject(forKey key: UUID) {
-            lock.lock()
-            defer { lock.unlock() }
-            cache.removeObject(forKey: key as NSUUID)
-            keys.remove(key)
-        }
-
-        func removeAll() {
-            lock.lock()
-            defer { lock.unlock() }
-            cache.removeAllObjects()
-            keys.removeAll()
-        }
-
-        var isEmpty: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return keys.isEmpty
-        }
-
-        subscript(key: UUID) -> NSImage? {
-            get { object(forKey: key) }
-            set {
-                if let image = newValue {
-                    setObject(image, forKey: key, cost: 0)
-                } else {
-                    removeObject(forKey: key)
-                }
-            }
-        }
-    }
-
-    private let imagePreviewCache = ImageCache(totalCostLimit: 48 * 1024 * 1024, countLimit: 32)
-    private let viewerImageCache = ImageCache(totalCostLimit: 192 * 1024 * 1024, countLimit: 3)
+    private let imagePreviewCache = VaultImageCache(totalCostLimit: 48 * 1024 * 1024, countLimit: 32)
+    private let viewerImageCache = VaultImageCache(totalCostLimit: 192 * 1024 * 1024, countLimit: 3)
     private var thumbnailLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
     private var viewerImageLoadTasks: [UUID: Task<SendableNSImage?, Never>] = [:]
     private var viewerPreloadTasks: [UUID: Task<Void, Never>] = [:]
@@ -207,21 +62,30 @@ final class VaultStore: ObservableObject {
         let recoveryCode: String
     }
 
-    private struct BackupManifest: Codable {
-        let formatVersion: Int
-        let vaultVersion: Int
-        let createdAt: Date
-        let fileHashes: [String: String]
-    }
-
     private static func placeholderAdminFields(rounds: UInt32 = CryptoService.defaultRounds) throws -> (salt: Data, verifier: Data) {
         let salt = try CryptoService.randomData(count: 16)
         _ = rounds
         return (salt, try CryptoService.randomData(count: 32))
     }
 
+    nonisolated private static func isSupportedVaultData(_ data: Data) -> Bool {
+        if let file = try? JSONDecoder().decode(VaultFile.self, from: data), file.version == vaultVersion {
+            return true
+        }
+        if let legacy = try? JSONDecoder().decode(LegacyVaultFile.self, from: data), legacy.version == 1 {
+            return true
+        }
+        return false
+    }
+
     init(vaultURL: URL? = nil) {
-        self.vaultURL = vaultURL ?? Self.defaultVaultURL()
+        let resolvedVaultURL = vaultURL ?? Self.defaultVaultURL()
+        try? VaultPersistence.recoverIfNeeded(
+            vaultURL: resolvedVaultURL,
+            attachmentsURL: Self.attachmentsRootURL(vaultURL: resolvedVaultURL),
+            isValidVaultData: Self.isSupportedVaultData
+        )
+        self.vaultURL = resolvedVaultURL
         state = Self.initialState(for: self.vaultURL)
         userCount = Self.userCount(at: self.vaultURL)
         accounts = Self.accountSummaries(at: self.vaultURL)
@@ -1588,6 +1452,12 @@ final class VaultStore: ObservableObject {
             .sorted { $0.createdAt > $1.createdAt }
         guard let index = images.firstIndex(where: { $0.id == itemID }) else { return }
         let nearbyIndices = [index - 1, index + 1].filter { images.indices.contains($0) }
+        let nearbyIDs = Set(nearbyIndices.map { images[$0].id })
+        let obsoletePreloadIDs = viewerPreloadTasks.keys.filter { !nearbyIDs.contains($0) }
+        for id in obsoletePreloadIDs {
+            viewerPreloadTasks[id]?.cancel()
+            viewerPreloadTasks[id] = nil
+        }
         for nearbyIndex in nearbyIndices {
             let id = images[nearbyIndex].id
             guard viewerImageCache[id] == nil,
@@ -1800,16 +1670,22 @@ final class VaultStore: ObservableObject {
     private func writeAttachmentData(_ data: Data, for attachmentID: UUID, userID: UUID, rawKey: Data) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID), withIntermediateDirectories: true)
         let url = attachmentURL(for: attachmentID, userID: userID)
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        let output = try FileHandle(forWritingTo: url)
-        defer { try? output.close() }
-        try writeAttachmentHeader(to: output, byteCount: data.count)
-        var offset = 0
-        while offset < data.count {
-            let end = min(offset + Self.attachmentChunkSize, data.count)
-            try writeEncryptedAttachmentChunk(data.subdata(in: offset..<end), to: output, rawKey: rawKey)
-            offset = end
+        let pendingURL = Self.pendingAttachmentURL(for: url)
+        defer { try? FileManager.default.removeItem(at: pendingURL) }
+        FileManager.default.createFile(atPath: pendingURL.path, contents: nil)
+        do {
+            let output = try FileHandle(forWritingTo: pendingURL)
+            defer { try? output.close() }
+            try writeAttachmentHeader(to: output, byteCount: data.count)
+            var offset = 0
+            while offset < data.count {
+                let end = min(offset + Self.attachmentChunkSize, data.count)
+                try writeEncryptedAttachmentChunk(data.subdata(in: offset..<end), to: output, rawKey: rawKey)
+                offset = end
+            }
+            try output.synchronize()
         }
+        try Self.commitPendingAttachment(pendingURL, to: url)
     }
 
     private func readAttachmentData(id attachmentID: UUID, userID: UUID, rawKey: Data) throws -> Data {
@@ -1842,20 +1718,25 @@ final class VaultStore: ObservableObject {
     private func writeAttachmentFile(from sourceURL: URL, for attachmentID: UUID, userID: UUID, rawKey: Data, byteCount: Int) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID), withIntermediateDirectories: true)
         let destinationURL = attachmentURL(for: attachmentID, userID: userID)
-        try? FileManager.default.removeItem(at: destinationURL)
-        FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
-        let input = try FileHandle(forReadingFrom: sourceURL)
-        let output = try FileHandle(forWritingTo: destinationURL)
-        defer {
-            try? input.close()
-            try? output.close()
+        let pendingURL = Self.pendingAttachmentURL(for: destinationURL)
+        defer { try? FileManager.default.removeItem(at: pendingURL) }
+        FileManager.default.createFile(atPath: pendingURL.path, contents: nil)
+        do {
+            let input = try FileHandle(forReadingFrom: sourceURL)
+            let output = try FileHandle(forWritingTo: pendingURL)
+            defer {
+                try? input.close()
+                try? output.close()
+            }
+            try writeAttachmentHeader(to: output, byteCount: byteCount)
+            while true {
+                let chunk = try input.read(upToCount: Self.attachmentChunkSize) ?? Data()
+                if chunk.isEmpty { break }
+                try writeEncryptedAttachmentChunk(chunk, to: output, rawKey: rawKey)
+            }
+            try output.synchronize()
         }
-        try writeAttachmentHeader(to: output, byteCount: byteCount)
-        while true {
-            let chunk = try input.read(upToCount: Self.attachmentChunkSize) ?? Data()
-            if chunk.isEmpty { break }
-            try writeEncryptedAttachmentChunk(chunk, to: output, rawKey: rawKey)
-        }
+        try Self.commitPendingAttachment(pendingURL, to: destinationURL)
     }
 
     nonisolated private static func writeAttachmentFile(
@@ -1871,10 +1752,11 @@ final class VaultStore: ObservableObject {
     ) throws {
         try FileManager.default.createDirectory(at: attachmentDirectory(for: userID, vaultURL: vaultURL), withIntermediateDirectories: true)
         let destinationURL = attachmentURL(for: attachmentID, userID: userID, vaultURL: vaultURL)
-        try? FileManager.default.removeItem(at: destinationURL)
-        FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
+        let pendingURL = pendingAttachmentURL(for: destinationURL)
+        defer { try? FileManager.default.removeItem(at: pendingURL) }
+        FileManager.default.createFile(atPath: pendingURL.path, contents: nil)
         let input = try FileHandle(forReadingFrom: sourceURL)
-        let output = try FileHandle(forWritingTo: destinationURL)
+        let output = try FileHandle(forWritingTo: pendingURL)
         defer {
             try? input.close()
             try? output.close()
@@ -1886,7 +1768,7 @@ final class VaultStore: ObservableObject {
             if shouldCancel() {
                 try? output.close()
                 try? input.close()
-                try? FileManager.default.removeItem(at: destinationURL)
+                try? FileManager.default.removeItem(at: pendingURL)
                 throw VaultError.importCancelled
             }
             let chunk = try input.read(upToCount: attachmentChunkSize) ?? Data()
@@ -1895,6 +1777,10 @@ final class VaultStore: ObservableObject {
             processedByteCount += chunk.count
             progress(processedByteCount)
         }
+        try output.synchronize()
+        try output.close()
+        try input.close()
+        try commitPendingAttachment(pendingURL, to: destinationURL)
     }
 
     private func streamAttachmentData(id attachmentID: UUID, userID: UUID, rawKey: Data, to destinationURL: URL) throws {
@@ -2019,6 +1905,17 @@ final class VaultStore: ObservableObject {
 
     nonisolated private static func attachmentURL(for attachmentID: UUID, userID: UUID, vaultURL: URL) -> URL {
         attachmentDirectory(for: userID, vaultURL: vaultURL).appendingPathComponent("\(attachmentID.uuidString).bin")
+    }
+
+    nonisolated private static func pendingAttachmentURL(for destinationURL: URL) -> URL {
+        destinationURL.appendingPathExtension("partial-\(UUID().uuidString)")
+    }
+
+    nonisolated private static func commitPendingAttachment(_ pendingURL: URL, to destinationURL: URL) throws {
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.moveItem(at: pendingURL, to: destinationURL)
     }
 
     private func attachmentDirectory(for userID: UUID) -> URL {
@@ -2365,6 +2262,11 @@ final class VaultStore: ObservableObject {
     }
 
     private func readVaultFile() throws -> VaultFile {
+        try VaultPersistence.recoverIfNeeded(
+            vaultURL: vaultURL,
+            attachmentsURL: attachmentsRootURL(),
+            isValidVaultData: Self.isSupportedVaultData
+        )
         do {
             let file = try JSONDecoder().decode(VaultFile.self, from: Data(contentsOf: vaultURL))
             guard file.version == Self.vaultVersion else { throw VaultError.corruptVault }
@@ -2392,14 +2294,8 @@ final class VaultStore: ObservableObject {
     }
 
     private func write(_ file: VaultFile) throws {
-        try FileManager.default.createDirectory(at: vaultURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(file)
-        if FileManager.default.fileExists(atPath: vaultURL.path),
-           let existing = try? Data(contentsOf: vaultURL),
-           (try? JSONDecoder().decode(VaultFile.self, from: existing)) != nil {
-            try existing.write(to: vaultRecoveryURL(), options: [.atomic])
-        }
-        try data.write(to: vaultURL, options: [.atomic])
+        try VaultPersistence.write(data, to: vaultURL, isValidVaultData: Self.isSupportedVaultData)
     }
 
     private func vaultRecoveryURL() -> URL {
@@ -2537,27 +2433,12 @@ final class VaultStore: ObservableObject {
         }
         let accessing = destinationURL.startAccessingSecurityScopedResource()
         defer { if accessing { destinationURL.stopAccessingSecurityScopedResource() } }
-        let dateTag = Self.backupDateFormatter.string(from: .now)
-        let backupDir = destinationURL.appendingPathComponent("密笺备份 \(dateTag)", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: vaultURL.path) {
-                try FileManager.default.copyItem(at: vaultURL, to: backupDir.appendingPathComponent("vault.json"))
-            }
-            let attachmentsRoot = attachmentsRootURL()
-            if FileManager.default.fileExists(atPath: attachmentsRoot.path) {
-                try FileManager.default.copyItem(at: attachmentsRoot, to: backupDir.appendingPathComponent("Attachments", isDirectory: true))
-            }
-            let hashes = try Self.backupFileHashes(in: backupDir)
-            let manifest = BackupManifest(
-                formatVersion: 1,
-                vaultVersion: Self.vaultVersion,
-                createdAt: .now,
-                fileHashes: hashes
-            )
-            try JSONEncoder().encode(manifest).write(
-                to: backupDir.appendingPathComponent("manifest.json"),
-                options: [.atomic]
+            _ = try VaultBackupService.createBackup(
+                vaultURL: vaultURL,
+                attachmentsURL: attachmentsRootURL(),
+                destinationRoot: destinationURL,
+                vaultVersion: Self.vaultVersion
             )
         } catch {
             errorMessage = "备份失败：\(error.localizedDescription)"
@@ -2590,17 +2471,10 @@ final class VaultStore: ObservableObject {
             errorMessage = "备份文件无效或已损坏"
             return
         }
-        let manifestURL = backupURL.appendingPathComponent("manifest.json")
-        if FileManager.default.fileExists(atPath: manifestURL.path) {
-            guard let manifestData = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(BackupManifest.self, from: manifestData),
-                  manifest.formatVersion == 1,
-                  manifest.vaultVersion == Self.vaultVersion,
-                  (try? Self.validateBackupHashes(manifest.fileHashes, in: backupURL)) == true else {
-                errorMessage = "备份完整性校验失败，未更改当前保险库"
-                recordSecurityEvent(.backupRestored, result: .failure, message: "备份完整性校验失败")
-                return
-            }
+        guard (try? VaultBackupService.validateBackup(at: backupURL, vaultVersion: Self.vaultVersion)) == true else {
+            errorMessage = "备份完整性校验失败，未更改当前保险库"
+            recordSecurityEvent(.backupRestored, result: .failure, message: "备份完整性校验失败")
+            return
         }
         do {
             try validateCurrentUserPassword(currentPassword, against: try readVaultFile())
@@ -2611,20 +2485,17 @@ final class VaultStore: ObservableObject {
         }
         if state == .unlocked { lock() }
         do {
-            if FileManager.default.fileExists(atPath: vaultURL.path) {
-                try FileManager.default.removeItem(at: vaultURL)
-            }
-            try FileManager.default.copyItem(at: backupVaultURL, to: vaultURL)
             let attachmentsRoot = attachmentsRootURL()
-            if FileManager.default.fileExists(atPath: attachmentsRoot.path) {
-                try FileManager.default.removeItem(at: attachmentsRoot)
-            }
             let backupAttachments = backupURL.appendingPathComponent("Attachments", isDirectory: true)
-            if FileManager.default.fileExists(atPath: backupAttachments.path) {
-                try FileManager.default.copyItem(at: backupAttachments, to: attachmentsRoot)
-            }
+            try VaultPersistence.restore(
+                vaultURL: vaultURL,
+                attachmentsURL: attachmentsRoot,
+                backupVaultURL: backupVaultURL,
+                backupAttachmentsURL: FileManager.default.fileExists(atPath: backupAttachments.path) ? backupAttachments : nil,
+                isValidVaultData: Self.isSupportedVaultData
+            )
         } catch {
-            errorMessage = "还原失败，当前保险库可能已损坏：\(error.localizedDescription)"
+            errorMessage = "还原失败，当前保险库已自动保留或回滚：\(error.localizedDescription)"
             state = Self.initialState(for: vaultURL)
             userCount = Self.userCount(at: vaultURL)
             accounts = Self.accountSummaries(at: vaultURL)
@@ -2638,51 +2509,4 @@ final class VaultStore: ObservableObject {
         errorMessage = "保险库已从备份还原，请重新登录"
     }
 
-    nonisolated private static var backupDateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        return formatter
-    }
-
-    nonisolated private static func backupFileHashes(in directory: URL) throws -> [String: String] {
-        let keys: [URLResourceKey] = [.isRegularFileKey]
-        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else {
-            throw VaultError.corruptVault
-        }
-        var hashes: [String: String] = [:]
-        for case let fileURL as URL in enumerator {
-            guard (try fileURL.resourceValues(forKeys: Set(keys))).isRegularFile == true,
-                  fileURL.lastPathComponent != "manifest.json" else { continue }
-            let basePath = directory.standardizedFileURL.path
-            let prefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
-            let filePath = fileURL.standardizedFileURL.path
-            guard filePath.hasPrefix(prefix) else { throw VaultError.corruptVault }
-            let relative = String(filePath.dropFirst(prefix.count))
-            hashes[relative] = try sha256Hex(of: fileURL)
-        }
-        return hashes
-    }
-
-    nonisolated private static func validateBackupHashes(_ expected: [String: String], in directory: URL) throws -> Bool {
-        guard !expected.isEmpty else { return false }
-        for (relative, hash) in expected {
-            let fileURL = directory.appendingPathComponent(relative)
-            guard FileManager.default.fileExists(atPath: fileURL.path),
-                  try sha256Hex(of: fileURL) == hash else { return false }
-        }
-        return true
-    }
-
-    nonisolated private static func sha256Hex(of url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            let data = try handle.read(upToCount: 4 * 1024 * 1024) ?? Data()
-            if data.isEmpty { break }
-            hasher.update(data: data)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
 }

@@ -1,24 +1,27 @@
-# CipherNotes 1.1.14 - 界面入口与状态安全整理
+# CipherNotes 1.1.15 - 安全持久化与原生交互重构
 
 ## Summary
 
-CipherNotes 1.1.14 consolidates repeated controls into a clearer native macOS hierarchy and closes two locked-state settings paths found during review.
+CipherNotes 1.1.15 strengthens interrupted-write recovery, refines the encrypted file viewer, and gives the macOS workspace a clearer native hierarchy with consistent motion.
 
 ## Highlights
 
-- Keeps the main toolbar focused on Security Center, app settings, and immediate lock.
-- Removes the duplicate bottom shortcut bar and repeated contextual commands without removing capabilities.
-- Makes Security Center the single place for Highest Protection and recovery-code management.
-- Keeps vault import in the vault header, and note actions in note menus and item context menus.
-- Stabilizes the notes/vault segmented control at a fixed width and height.
-- Removes repeated account/protection status from the notes sidebar and duplicate empty-state creation actions.
-- Blocks account settings while locked and dismisses sensitive settings sheets when the vault locks automatically.
-- Preserves the encrypted media viewer, super-private space, decoy space, local security log, backups, changelog, legal disclosure, and equal local-account model.
+- Adds transaction-journal recovery for interrupted vault writes and restores.
+- Restores encrypted metadata and attachments as one validated transaction.
+- Splits authentication, security, persistence, backup, import, cache, and shared UI into focused modules.
+- Improves the encrypted viewer with full-screen adaptation, native anchored zoom, 1:1 viewing, and cancellable neighboring preload.
+- Keeps large vault-file imports chunked and off the main interface.
+- Separates the workspace into a stable navigation band, quick overview panel, and content region.
+- Adds consistent account, workspace, protection-state, list, empty-state, and viewer transitions.
+- Removes the automatic sidebar toolbar item that caused the window title to shift between workspaces.
+- Limits the in-app changelog to the latest 10 versions while retaining older history in the source.
+- Respects the macOS Reduce Motion setting throughout the new transitions.
+- Adds a documented local threat model and expanded persistence regression coverage.
 
 ## Downloads
 
-- `密笺-1.1.14.pkg`: recommended public installer.
-- `密笺-1.1.14.zip`: portable application archive.
+- `密笺-1.1.15.pkg`: recommended public installer.
+- `密笺-1.1.15.zip`: portable application archive.
 
 Requires macOS 14 or later.
 
@@ -26,12 +29,14 @@ Requires macOS 14 or later.
 
 - Release metadata validation
 - Swift debug and release builds
-- 43 automated tests
-- Minimum-window light/dark/accent render checks
-- Locked, registration, and unlocked-workspace visual regression snapshots
+- 48 automated tests
+- Interrupted-write and interrupted-restore recovery tests
+- Metadata and attachment restore transaction test
+- Minimum-window light/dark render checks
+- Login, registration, workspace, and encrypted-viewer visual snapshots
 - Strict application code-signature verification
 - Installer payload verification
 
 ## Publishing
 
-Push tag `v1.1.14` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
+Push tag `v1.1.15` after the release commit. The GitHub Release workflow builds the same single formal application, creates or updates the Release, and uploads the installer, archive, release notes, user guide, product page, and icon.
