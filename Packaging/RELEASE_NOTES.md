@@ -17,6 +17,11 @@ CipherNotes 1.1.15 strengthens interrupted-write recovery, refines the encrypted
 - Limits the in-app changelog to the latest 10 versions while retaining older history in the source.
 - Respects the macOS Reduce Motion setting throughout the new transitions.
 - Adds a documented local threat model and expanded persistence regression coverage.
+- Unifies security, account, logs, backup, appearance, and update controls in one native settings window.
+- Replaces routine success alerts with non-blocking in-app feedback.
+- Adds an 8-second undo window for note deletion while keeping encrypted file deletion explicitly irreversible.
+- Restores the previous standard auto-lock interval after Highest Protection is disabled.
+- Improves encrypted viewer continuity with cached thumbnails and a clearer secure-loading state.
 
 ## Downloads
 
@@ -29,7 +34,7 @@ Requires macOS 14 or later.
 
 - Release metadata validation
 - Swift debug and release builds
-- 48 automated tests
+- 52 automated tests
 - Interrupted-write and interrupted-restore recovery tests
 - Metadata and attachment restore transaction test
 - Minimum-window light/dark render checks

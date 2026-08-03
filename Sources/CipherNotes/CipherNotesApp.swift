@@ -77,9 +77,11 @@ struct CipherNotesApp: App {
                 }
             }
             CommandMenu("账户与安全") {
-                Button("安全中心…") { post(.cipherNotesShowSecurityCenter) }
+                Button("安全与设置…") { SettingsRoute.open(.overview) }
                     .disabled(store.state != .unlocked)
-                Button("账户与安全…") { post(.cipherNotesShowUserManagement) }
+                Button("最高保护…") { SettingsRoute.open(.highestProtection) }
+                    .disabled(store.state != .unlocked)
+                Button("账户…") { SettingsRoute.open(.account) }
                     .disabled(store.state != .unlocked)
                 Text(store.state == .unlocked ? "当前账户：\(store.signedInUsername ?? "本地账户")" : "纯免费本地版本")
             }
@@ -102,10 +104,11 @@ struct CipherNotesApp: App {
                         Text(appearance.label).tag(appearance.rawValue)
                     }
                 }
+                Divider()
+                Button("外观设置…") { SettingsRoute.open(.appearance) }
             }
             CommandMenu("帮助") {
-                Button("更新日志") { post(.cipherNotesShowChangelog) }
-                Button("法律与隐私声明") { post(.cipherNotesShowLegalDisclosure) }
+                Button("更新与关于…") { SettingsRoute.open(.updateAbout) }
             }
         }
     }

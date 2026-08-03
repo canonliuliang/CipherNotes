@@ -135,10 +135,8 @@ struct RootView: View {
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("reduceMotion") private var reduceMotion = false
     @AppStorage("hasSeenCipherNotesIntro") private var hasSeenIntro = false
-    @State private var showingLegalDisclosure = false
-    @State private var showingChangelog = false
-    @State private var showingUserManagement = false
-    @State private var showingSecurityCenter = false
+    @State private var showingSettings = false
+    @State private var selectedSettingsSection: SettingsSection = .overview
     @State private var privacyShieldActive = false
 
     private var appAppearance: AppAppearance {
@@ -161,6 +159,7 @@ struct RootView: View {
                 .transition(.opacity)
                 .zIndex(10)
             }
+            AppFeedbackOverlay().environmentObject(store).zIndex(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minWidth: 860, minHeight: 620)
@@ -177,8 +176,7 @@ struct RootView: View {
         }
         .onChange(of: store.state) { _, state in
             guard state != .unlocked else { return }
-            showingSecurityCenter = false
-            showingUserManagement = false
+            showingSettings = false
             privacyShieldActive = false
         }
         .sheet(isPresented: Binding(get: { store.recoveryCodeToShow != nil }, set: { if !$0 { store.dismissRecoveryCode() } })) {
@@ -187,31 +185,25 @@ struct RootView: View {
             }
             .environmentObject(store)
         }
-        .sheet(isPresented: $showingLegalDisclosure) {
-            LegalDisclosureView()
-        }
-        .sheet(isPresented: $showingChangelog) {
-            ChangelogView()
-        }
-        .sheet(isPresented: $showingUserManagement) {
-            UserManagementView()
-                .environmentObject(store)
-        }
-        .sheet(isPresented: $showingSecurityCenter) {
-            SecurityCenterView()
-                .environmentObject(store)
-        }
+        .sheet(isPresented: $showingSettings) { AppSettingsView(selection: $selectedSettingsSection).environmentObject(store) }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowUserManagement)) { _ in
-            showingUserManagement = store.state == .unlocked
+            openSettings(.account)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowSecurityCenter)) { _ in
-            showingSecurityCenter = store.state == .unlocked
+            openSettings(.highestProtection)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowChangelog)) { _ in
-            showingChangelog = true
+            openSettings(.updateAbout)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowLegalDisclosure)) { _ in
-            showingLegalDisclosure = true
+            openSettings(.updateAbout)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cipherNotesShowSettings)) { notification in
+            guard let rawValue = notification.userInfo?["section"] as? String, let section = SettingsSection(rawValue: rawValue) else { return }
+            openSettings(section)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            store.commitPendingNoteDeletion()
         }
     }
 
@@ -229,6 +221,12 @@ struct RootView: View {
             case .unlocked: NotesView()
             }
         }
+    }
+
+    private func openSettings(_ section: SettingsSection) {
+        guard store.state == .unlocked || section == .updateAbout || section == .appearance else { return }
+        selectedSettingsSection = section
+        showingSettings = true
     }
 
 }

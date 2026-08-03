@@ -19,6 +19,8 @@ final class VaultStore: ObservableObject {
     @Published private(set) var vaultDeletingItemIDs: Set<UUID> = []
     @Published var recoveryCodeToShow: String?
     @Published var errorMessage: String?
+    @Published private(set) var feedback: AppFeedback?
+    @Published private(set) var pendingNoteDeletion: PendingNoteDeletion?
     @Published var autoLockMinutes = 5
 
     nonisolated private static let vaultVersion = 2
@@ -38,6 +40,10 @@ final class VaultStore: ObservableObject {
     private var authenticationFailureCounts: [String: Int] = [:]
     private var authenticationBlockedUntil: [String: Date] = [:]
     private var lastActivity = Date()
+    private var standardAutoLockMinutes = 5
+    private var pendingDeletedNote: (note: Note, index: Int, userID: UUID)?
+    private var pendingDeletionTask: Task<Void, Never>?
+    private var feedbackDismissTask: Task<Void, Never>?
 
     private let imagePreviewCache = VaultImageCache(totalCostLimit: 48 * 1024 * 1024, countLimit: 32)
     private let viewerImageCache = VaultImageCache(totalCostLimit: 192 * 1024 * 1024, countLimit: 3)
@@ -340,7 +346,8 @@ final class VaultStore: ObservableObject {
             recoveryCodeToShow = recovery.code
             recordSecurityEvent(.passwordChanged, message: "当前账户密码已更新")
             recordSecurityEvent(.recoveryCodeGenerated, message: "密码更新后已生成新的恢复码")
-            errorMessage = "当前账户密码已更新"
+            errorMessage = nil
+            showFeedback(.success, title: "账户密码已更新", detail: "新的恢复码已经生成")
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "当前账户密码更新失败"
         }
@@ -589,7 +596,8 @@ final class VaultStore: ObservableObject {
             refreshAccounts(from: file)
             autoLockMinutes = 1
             recordSecurityEvent(.decoyPasswordConfigured, message: action == .openDecoySpace ? "虚假密码已设置为进入虚假空间" : "虚假密码已设置为销毁本地数据")
-            errorMessage = "虚假密码已设置"
+            errorMessage = nil
+            showFeedback(.success, title: "虚假密码已设置")
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "设置虚假密码失败"
         }
@@ -616,7 +624,8 @@ final class VaultStore: ObservableObject {
             vaultFile = file
             refreshAccounts(from: file)
             recordSecurityEvent(.decoyPasswordDisabled, message: "虚假密码已关闭")
-            errorMessage = "虚假密码已关闭"
+            errorMessage = nil
+            showFeedback(.success, title: "虚假密码已关闭")
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "关闭虚假密码失败"
         }
@@ -637,17 +646,34 @@ final class VaultStore: ObservableObject {
             try write(file)
             vaultFile = file
             refreshAccounts(from: file)
-            if currentUserID == userID, enabled {
-                autoLockMinutes = 1
-                imagePreviewCache.removeAll()
+            if currentUserID == userID {
+                if enabled {
+                    standardAutoLockMinutes = normalizedAutoLockMinutes(autoLockMinutes)
+                    UserDefaults.standard.set(standardAutoLockMinutes, forKey: "standardAutoLockMinutes")
+                    autoLockMinutes = 1
+                    imagePreviewCache.removeAll()
+                } else {
+                    autoLockMinutes = standardAutoLockMinutes
+                }
             }
             if currentUserID == userID {
                 recordSecurityEvent(enabled ? .advancedProtectionEnabled : .advancedProtectionDisabled, message: enabled ? "缩略图、复制、导出和共享已限制" : "高级数据保护已关闭")
             }
-            errorMessage = enabled ? "高级数据保护已开启：预览已隐藏，自动锁定已收紧到 1 分钟" : "高级数据保护已关闭"
+            errorMessage = nil
+            showFeedback(.success, title: enabled ? "最高保护已开启" : "已恢复标准保护", detail: enabled ? "自动锁定固定为 1 分钟" : "已恢复此前的自动锁定时间")
         } catch {
             errorMessage = "更新高级数据保护失败：\(error.localizedDescription)"
         }
+    }
+
+    func setStandardAutoLockMinutes(_ minutes: Int) {
+        standardAutoLockMinutes = normalizedAutoLockMinutes(minutes)
+        UserDefaults.standard.set(standardAutoLockMinutes, forKey: "standardAutoLockMinutes")
+        if !currentAccountAdvancedDataProtectionEnabled { autoLockMinutes = standardAutoLockMinutes }
+    }
+
+    private func normalizedAutoLockMinutes(_ minutes: Int) -> Int {
+        [1, 5, 15, 30].contains(minutes) ? minutes : 5
     }
 
     func rotateRecoveryCode() {
@@ -705,10 +731,11 @@ final class VaultStore: ObservableObject {
         persist()
     }
 
-    func clearSecurityLogs(currentPassword: String) {
+    @discardableResult
+    func clearSecurityLogs(currentPassword: String) -> Bool {
         guard !currentPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = VaultError.passwordRequired.localizedDescription
-            return
+            return false
         }
         do {
             let file = try readVaultFile()
@@ -723,9 +750,12 @@ final class VaultStore: ObservableObject {
                 ))
             }
             persist()
-            errorMessage = "安全日志已清空"
+            errorMessage = nil
+            showFeedback(.success, title: "安全日志已清空")
+            return true
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "清空安全日志失败"
+            return false
         }
     }
 
@@ -747,7 +777,8 @@ final class VaultStore: ObservableObject {
                 createdAt: .now
             )
             try JSONEncoder().encode(package).write(to: destinationURL, options: [.atomic])
-            errorMessage = "加密安全日志已导出"
+            errorMessage = nil
+            showFeedback(.success, title: "加密安全日志已导出")
         } catch {
             errorMessage = "导出安全日志失败：\(error.localizedDescription)"
         }
@@ -840,7 +871,8 @@ final class VaultStore: ObservableObject {
             notes.insert(note, at: 0)
             persist()
             touchActivity()
-            errorMessage = "共享笔记已导入"
+            errorMessage = nil
+            showFeedback(.success, title: "共享笔记已导入")
             recordSecurityEvent(.sharedNoteImported, message: "已导入 1 条共享笔记")
             return note.id
         } catch {
@@ -852,6 +884,7 @@ final class VaultStore: ObservableObject {
 
     func lock() {
         guard state == .unlocked else { return }
+        commitPendingNoteDeletion()
         cancelAllVaultImportJobs()
         recordSecurityEvent(.locked, message: "账户已锁定")
         notes.removeAll(keepingCapacity: false)
@@ -868,6 +901,25 @@ final class VaultStore: ObservableObject {
         isSuperPrivateSession = false
         state = .locked
         errorMessage = nil
+        feedback = nil
+    }
+
+    func showFeedback(_ kind: AppFeedbackKind, title: String, detail: String? = nil, autoDismiss: Bool = true) {
+        feedbackDismissTask?.cancel()
+        feedback = AppFeedback(kind: kind, title: title, detail: detail)
+        guard autoDismiss, kind != .progress else { return }
+        let feedbackID = feedback?.id
+        feedbackDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            guard self?.feedback?.id == feedbackID else { return }
+            self?.feedback = nil
+        }
+    }
+
+    func dismissFeedback() {
+        feedbackDismissTask?.cancel()
+        feedback = nil
     }
 
     func addNote() -> UUID {
@@ -941,7 +993,7 @@ final class VaultStore: ObservableObject {
         notes[index].updatedAt = .now
         persist()
         touchActivity()
-        errorMessage = notes[index].isPinned ? "已置顶" : "已取消置顶"
+        showFeedback(.success, title: notes[index].isPinned ? "已置顶" : "已取消置顶")
     }
 
     func toggleFavorite(noteID: UUID) {
@@ -950,7 +1002,7 @@ final class VaultStore: ObservableObject {
         notes[index].updatedAt = .now
         persist()
         touchActivity()
-        errorMessage = notes[index].isFavorite ? "已加入收藏" : "已取消收藏"
+        showFeedback(.success, title: notes[index].isFavorite ? "已加入收藏" : "已取消收藏")
     }
 
     func toggleArchived(noteID: UUID) {
@@ -959,7 +1011,7 @@ final class VaultStore: ObservableObject {
         notes[index].updatedAt = .now
         persist()
         touchActivity()
-        errorMessage = notes[index].isArchived ? "已归档" : "已移回笔记列表"
+        showFeedback(.success, title: notes[index].isArchived ? "已归档" : "已移回笔记列表")
     }
 
     func updateTags(noteID: UUID, tags: [String]) {
@@ -1156,9 +1208,11 @@ final class VaultStore: ObservableObject {
 
     private func showImportSuccessMessage(importedCount: Int, deleteFailures: Int, deleteOriginals: Bool) {
         if deleteOriginals && deleteFailures > 0 {
-            errorMessage = "文件已加密进入保险柜，但有 \(deleteFailures) 个原文件未能删除，请手动确认。"
+            errorMessage = nil
+            showFeedback(.warning, title: "文件已加密进入保险柜", detail: "有 \(deleteFailures) 个原文件未能删除，请手动确认")
         } else {
-            errorMessage = importedCount == 1 ? "已移入保险柜，原文件已删除" : "已移入 \(importedCount) 个文件，原文件已删除"
+            errorMessage = nil
+            showFeedback(.success, title: importedCount == 1 ? "已移入保险柜" : "已移入 \(importedCount) 个文件", detail: deleteOriginals ? "原文件已删除" : nil)
         }
     }
 
@@ -1300,7 +1354,8 @@ final class VaultStore: ObservableObject {
         defer { if accessing { destinationURL.stopAccessingSecurityScopedResource() } }
         do {
             try streamAttachmentData(id: itemID, userID: currentUserID, rawKey: vaultKey, to: destinationURL)
-            errorMessage = "文件已导出"
+            errorMessage = nil
+            showFeedback(.success, title: "文件已导出")
             recordSecurityEvent(.vaultFileExported, message: "已导出 1 个保险柜文件")
         } catch {
             errorMessage = "导出文件失败：\(error.localizedDescription)"
@@ -1364,6 +1419,11 @@ final class VaultStore: ObservableObject {
         let image = imageBox?.image
         if let image { insertPreviewImage(image, for: itemID) }
         return image
+    }
+
+    func cachedVaultPreviewImage(itemID: UUID) -> NSImage? {
+        guard !currentAccountAdvancedDataProtectionEnabled else { return nil }
+        return viewerImageCache.object(forKey: itemID) ?? imagePreviewCache.object(forKey: itemID)
     }
 
     func loadVaultImageForViewing(itemID: UUID, recordViewEvent: Bool = true) async -> NSImage? {
@@ -1545,7 +1605,8 @@ final class VaultStore: ObservableObject {
                 cleanupVaultItemResources(itemID: itemID)
                 persist()
                 touchActivity()
-                errorMessage = "文件已从保险柜删除"
+                errorMessage = nil
+                showFeedback(.success, title: "文件已从保险柜删除")
                 recordSecurityEvent(.vaultFileDeleted, message: "已删除 1 个保险柜文件")
             } catch {
                 errorMessage = "删除保险柜文件失败：\(error.localizedDescription)"
@@ -1565,7 +1626,8 @@ final class VaultStore: ObservableObject {
                     self.vaultDeletingItemIDs.remove(itemID)
                     self.persist()
                     self.touchActivity()
-                    self.errorMessage = "文件已从保险柜删除"
+                    self.errorMessage = nil
+                    self.showFeedback(.success, title: "文件已从保险柜删除")
                     self.recordSecurityEvent(.vaultFileDeleted, message: "已删除 1 个保险柜文件")
                 }
             } catch {
@@ -1579,35 +1641,46 @@ final class VaultStore: ObservableObject {
     }
 
     func deleteNotes(at offsets: IndexSet) {
-        guard let currentUserID else { return }
-        var removedAny = false
-        for index in offsets.sorted(by: >) where notes.indices.contains(index) {
-            do {
-                try removeAttachmentFiles(in: notes[index], userID: currentUserID)
-                notes.remove(at: index)
-                removedAny = true
-            } catch {
-                errorMessage = "删除笔记附件失败：\(error.localizedDescription)"
-            }
-        }
-        if removedAny {
-            persist()
-            touchActivity()
-        }
+        let ids = offsets.compactMap { notes.indices.contains($0) ? notes[$0].id : nil }
+        ids.forEach(deleteNote)
     }
 
     func deleteNote(id: UUID) {
-        if let currentUserID, let note = notes.first(where: { $0.id == id }) {
-            do {
-                try removeAttachmentFiles(in: note, userID: currentUserID)
-            } catch {
-                errorMessage = "删除笔记附件失败：\(error.localizedDescription)"
-                return
-            }
-        }
-        notes.removeAll { $0.id == id }
+        guard let currentUserID, let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        commitPendingNoteDeletion()
+        let note = notes.remove(at: index)
+        pendingDeletedNote = (note, index, currentUserID)
+        pendingNoteDeletion = PendingNoteDeletion(noteID: note.id, title: note.title.isEmpty ? "无标题" : note.title, expiresAt: .now.addingTimeInterval(8))
         persist()
         touchActivity()
+        pendingDeletionTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            self?.commitPendingNoteDeletion()
+        }
+    }
+
+    func undoPendingNoteDeletion() {
+        guard let pendingDeletedNote, pendingDeletedNote.userID == currentUserID, state == .unlocked else { return }
+        pendingDeletionTask?.cancel()
+        notes.insert(pendingDeletedNote.note, at: min(pendingDeletedNote.index, notes.count))
+        self.pendingDeletedNote = nil
+        pendingNoteDeletion = nil
+        persist()
+        touchActivity()
+        showFeedback(.success, title: "已恢复笔记")
+    }
+
+    func commitPendingNoteDeletion() {
+        pendingDeletionTask?.cancel()
+        defer { pendingDeletedNote = nil; pendingNoteDeletion = nil }
+        guard let pendingDeletedNote else { return }
+        do {
+            try removeAttachmentFiles(in: pendingDeletedNote.note, userID: pendingDeletedNote.userID)
+        } catch {
+            errorMessage = "删除笔记附件失败：\(error.localizedDescription)"
+            showFeedback(.failure, title: "附件清理失败", detail: error.localizedDescription)
+        }
     }
 
     func deleteCurrentUser(password: String, confirmationText: String) {
@@ -1642,7 +1715,8 @@ final class VaultStore: ObservableObject {
             self.currentUserID = nil
             signedInUsername = nil
             state = file.users.isEmpty ? .needsAdminSetup : .locked
-            errorMessage = "当前账户已删除，相关加密数据已销毁"
+            errorMessage = nil
+            showFeedback(.success, title: "当前账户已删除", detail: "相关加密数据已销毁")
         } catch {
             errorMessage = (error as? VaultError)?.localizedDescription ?? "删除账户失败"
         }
@@ -2000,9 +2074,9 @@ final class VaultStore: ObservableObject {
         isDecoySession = false
         isSuperPrivateSession = false
         refreshAccounts(from: file)
-        if user.advancedDataProtectionEnabled {
-            autoLockMinutes = min(autoLockMinutes, 1)
-        }
+        let savedAutoLock = UserDefaults.standard.integer(forKey: "standardAutoLockMinutes")
+        standardAutoLockMinutes = normalizedAutoLockMinutes(savedAutoLock == 0 ? 5 : savedAutoLock)
+        autoLockMinutes = user.advancedDataProtectionEnabled ? 1 : standardAutoLockMinutes
         state = .unlocked
         errorMessage = nil
         touchActivity()
@@ -2445,7 +2519,8 @@ final class VaultStore: ObservableObject {
             recordSecurityEvent(.backupCreated, result: .failure, message: "保险库备份失败")
             return
         }
-        errorMessage = "保险库已备份到选定文件夹"
+        errorMessage = nil
+        showFeedback(.success, title: "保险库备份完成")
         recordSecurityEvent(.backupCreated, message: "保险库已备份")
     }
 
@@ -2506,7 +2581,8 @@ final class VaultStore: ObservableObject {
         accounts = Self.accountSummaries(at: vaultURL)
         imagePreviewCache.removeAll()
         cleanOrphanedAttachments()
-        errorMessage = "保险库已从备份还原，请重新登录"
+        errorMessage = nil
+        showFeedback(.success, title: "保险库已还原", detail: "请重新登录")
     }
 
 }

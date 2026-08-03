@@ -35,6 +35,7 @@ struct RecoveryCodeView: View {
 
 struct LegalDisclosureView: View {
     @Environment(\.dismiss) private var dismiss
+    var embedded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -62,15 +63,17 @@ struct LegalDisclosureView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack {
-                Spacer()
-                Button("我知道了") { dismiss() }
-                    .buttonStyle(AppleProminentButtonStyle())
-                    .keyboardShortcut(.defaultAction)
+            if !embedded {
+                HStack {
+                    Spacer()
+                    Button("我知道了") { dismiss() }
+                        .buttonStyle(AppleProminentButtonStyle())
+                        .keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(24)
-        .frame(width: 620, height: 520)
+        .frame(minWidth: embedded ? 0 : 620, minHeight: embedded ? 0 : 520)
     }
 }
 
@@ -210,7 +213,7 @@ struct SecurityCenterView: View {
                                         confirmation: decoyConfirmation,
                                         action: decoyAction
                                     )
-                                    if store.errorMessage == "虚假密码已设置" {
+                                    if store.errorMessage == nil {
                                         decoyCurrentPassword = ""
                                         decoyPassword = ""
                                         decoyConfirmation = ""
@@ -598,7 +601,7 @@ struct SecurityCenterView: View {
     private func copyVaultPath() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(store.vaultStoragePath, forType: .string)
-        store.errorMessage = "本地数据位置已复制"
+        store.showFeedback(.success, title: "本地数据位置已复制")
     }
 
     private func clearSecurityLogs() {
@@ -718,10 +721,12 @@ struct UserManagementView: View {
     @State private var passwordConfirmation = ""
     @State private var currentPassword = ""
     @State private var confirmationText = ""
+    var embedded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
+            if !embedded {
+                HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("账户与安全", systemImage: "person.2.badge.gearshape")
                         .font(.title2.bold())
@@ -731,8 +736,9 @@ struct UserManagementView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("关闭") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                    Button("关闭") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
             }
 
             ScrollView {
@@ -770,7 +776,7 @@ struct UserManagementView: View {
             }
         }
         .padding(24)
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 620, idealHeight: 660)
+        .frame(minWidth: embedded ? 0 : 560, idealWidth: embedded ? nil : 620, minHeight: embedded ? 0 : 620, idealHeight: embedded ? nil : 660)
     }
 
     private var passwordSection: some View {
@@ -795,7 +801,7 @@ struct UserManagementView: View {
                         newPassword: passwordNew,
                         confirmation: passwordConfirmation
                     )
-                    if store.errorMessage == "当前账户密码已更新" {
+                    if store.errorMessage == nil {
                         passwordCurrent = ""
                         passwordNew = ""
                         passwordConfirmation = ""
@@ -962,13 +968,14 @@ struct UserManagementView: View {
 
 struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
+    var embedded = false
 
     private let entries: [UpdateLogEntry] = [
         UpdateLogEntry(
             id: "1.1.15",
             version: "1.1.15",
             title: "安全持久化与原生交互重构",
-            dateText: "2026-08-02",
+            dateText: "2026-08-03",
             items: [
                 "保险库写入与备份还原加入事务日志、候选文件和回滚恢复，意外中断后会优先恢复最近一次完整有效的数据。",
                 "主界面代码拆分为验证、安全中心、持久化、备份、导入、缓存和应用外观等独立模块，降低后续修改的相互影响。",
@@ -976,7 +983,10 @@ struct ChangelogView: View {
                 "工作区建立顶部导航、快速查看面板和内容主体三层结构，移除会导致窗口标题跳动的系统自动侧栏入口。",
                 "账户切换、记事本与保险柜切换、保护状态、列表增删和查看器切图加入统一短动效，并完整支持减少动态效果。",
                 "应用内更新日志只展示最近 10 个版本，避免历史记录过长影响浏览。",
-                "新增本地威胁模型和事务恢复回归测试，发布版本更新为 1.1.15 (52)，48 项自动化测试通过。"
+                "安全、账户、日志、备份、外观、更新和法律信息统一到系统设置式窗口；成功反馈改为非阻塞提示，笔记删除支持 8 秒撤销。",
+                "主工作区固定切换器和状态条尺寸，空状态只展示一次；保险柜查看器切换时保留上一帧并优先使用缓存缩略图。",
+                "本地构建更新为 1.1.15 (55)。",
+                "新增本地威胁模型、事务恢复和界面稳定性回归测试，当前 52 项自动化测试全部通过。"
             ]
         ),
         UpdateLogEntry(
@@ -1434,15 +1444,17 @@ struct ChangelogView: View {
                     }
                 }
             }
-            HStack {
-                Spacer()
-                Button("关闭") { dismiss() }
-                    .buttonStyle(AppleProminentButtonStyle())
-                    .keyboardShortcut(.defaultAction)
+            if !embedded {
+                HStack {
+                    Spacer()
+                    Button("关闭") { dismiss() }
+                        .buttonStyle(AppleProminentButtonStyle())
+                        .keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(24)
-        .frame(minWidth: 620, idealWidth: 680, minHeight: 520, idealHeight: 620)
+        .frame(minWidth: embedded ? 0 : 620, idealWidth: embedded ? nil : 680, minHeight: embedded ? 0 : 520, idealHeight: embedded ? nil : 620)
     }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 
 extension Notification.Name {
+    static let cipherNotesShowSettings = Notification.Name("cipherNotesShowSettings")
     static let cipherNotesShowUserManagement = Notification.Name("cipherNotesShowUserManagement")
     static let cipherNotesShowSecurityCenter = Notification.Name("cipherNotesShowSecurityCenter")
     static let cipherNotesShowChangelog = Notification.Name("cipherNotesShowChangelog")
@@ -20,4 +21,10 @@ extension Notification.Name {
     static let cipherNotesImportNote = Notification.Name("cipherNotesImportNote")
     static let cipherNotesBackupVault = Notification.Name("cipherNotesBackupVault")
     static let cipherNotesRestoreVault = Notification.Name("cipherNotesRestoreVault")
+}
+
+enum SettingsRoute {
+    static func open(_ section: SettingsSection) {
+        NotificationCenter.default.post(name: .cipherNotesShowSettings, object: nil, userInfo: ["section": section.rawValue])
+    }
 }

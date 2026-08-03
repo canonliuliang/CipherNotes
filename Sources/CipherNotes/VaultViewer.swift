@@ -194,17 +194,31 @@ struct VaultGalleryPreviewView: View {
                 ZStack {
                     if loadedPreview != nil {
                         Color.black.opacity(0.08)
+                    } else {
+                        VStack(spacing: 14) {
+                            Image(systemName: currentItem.map { VaultFileKind($0).symbolName } ?? "lock.doc")
+                                .font(.system(size: 48, weight: .light))
+                                .foregroundStyle(.tertiary)
+                            Text(store.currentAccountAdvancedDataProtectionEnabled ? "受保护内容" : (currentItem?.fileName ?? "保险柜文件"))
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: 320)
+                        }
                     }
-                    VStack(spacing: 10) {
-                        Image(systemName: "lock.open.display")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
                         Text("正在安全读取")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 18)
                 }
                 .transition(.opacity)
             }
@@ -367,6 +381,9 @@ struct VaultGalleryPreviewView: View {
         }
         let requestedID = item.id
         let kind = VaultFileKind(item)
+        if kind == .image, let cached = store.cachedVaultPreviewImage(itemID: requestedID) {
+            loadedPreview = .image(cached)
+        }
         let result: LoadedVaultPreview?
         switch kind {
         case .video, .audio:
@@ -374,6 +391,12 @@ struct VaultGalleryPreviewView: View {
                 .media($0, isVideo: kind == .video)
             }
         case .image:
+            if loadedPreview == nil,
+               let thumbnail = await store.previewVaultImage(itemID: requestedID),
+               !Task.isCancelled,
+               currentItemID == requestedID {
+                loadedPreview = .image(thumbnail)
+            }
             result = await store.loadVaultImageForViewing(itemID: requestedID).map(LoadedVaultPreview.image)
         case .pdf:
             result = await store.loadVaultDocumentForViewing(itemID: requestedID, maximumBytes: 128 * 1024 * 1024).map(LoadedVaultPreview.pdf)

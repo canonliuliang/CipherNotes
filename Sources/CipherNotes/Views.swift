@@ -56,7 +56,6 @@ func requestPasswordAuthorization(title: String, message: String, actionTitle: S
 
 struct NotesView: View {
     @EnvironmentObject private var store: VaultStore
-    @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @AppStorage("noteSort") private var noteSortRawValue = NoteSort.updatedNewest.rawValue
     @AppStorage("noteFilter") private var noteFilterRawValue = NoteFilter.active.rawValue
     @AppStorage("reduceMotion") private var reduceMotion = false
@@ -142,24 +141,17 @@ struct NotesView: View {
         VStack(spacing: 0) {
             workspaceSwitcher
                 .padding(.horizontal, 18)
-                .frame(height: 50)
+                .frame(height: 46)
                 .background(.bar)
                 .overlay(alignment: .bottom) {
                     Divider()
                 }
 
             mainStatusStrip
-                .padding(.horizontal, 10)
-                .frame(height: 54)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(.primary.opacity(0.10), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.07), radius: 9, y: 3)
                 .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .frame(height: 50)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .bottom) { Divider() }
 
             ZStack {
                 if workspaceMode == .notes {
@@ -239,7 +231,9 @@ struct NotesView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .controlSize(.regular)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
                     .frame(height: 30)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -306,22 +300,9 @@ struct NotesView: View {
                     }
                 }
                 .overlay {
-                    if filteredNotes.isEmpty {
-                        VStack(spacing: 12) {
-                            ContentUnavailableView(
-                                emptyNotesTitle,
-                                systemImage: "note.text.badge.plus",
-                                description: Text(emptyNotesDescription)
-                            )
-                            Button {
-                                selection = store.addNote()
-                            } label: {
-                                Label("新建第一条笔记", systemImage: "square.and.pencil")
-                            }
-                            .buttonStyle(AppleProminentButtonStyle())
-                        }
-                        .padding()
-                        .transition(MotionStyle.transition(reduceMotion: reduceMotion))
+                    if filteredNotes.isEmpty && !query.isEmpty {
+                        ContentUnavailableView("没有匹配的笔记", systemImage: "magnifyingglass")
+                            .transition(.opacity)
                     }
                 }
                 .animation(MotionStyle.quick(reduceMotion: reduceMotion), value: filteredNotes.isEmpty)
@@ -344,12 +325,18 @@ struct NotesView: View {
             if let selection, store.notes.contains(where: { $0.id == selection }) {
                 NoteEditor(noteID: selection)
             } else if store.notes.isEmpty {
-                Color.clear
+                VStack(spacing: 14) {
+                    Image(systemName: "note.text.badge.plus").font(.system(size: 42)).foregroundStyle(.tertiary)
+                    Text("开始写第一条笔记").font(.title3.weight(.semibold))
+                    Text(emptyNotesDescription).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button { selection = store.addNote() } label: { Label("新建笔记", systemImage: "square.and.pencil") }
+                        .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: 420).frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 ContentUnavailableView("选择一条笔记", systemImage: "note.text", description: Text("或创建一条新的加密笔记"))
             }
         })
-        .toolbar(removing: .sidebarToggle)
         .listStyle(.sidebar)
         .onAppear(perform: ensureSelection)
         .onReceive(NotificationCenter.default.publisher(for: .cipherNotesNewNote)) { _ in addNewNoteFromCommand() }
@@ -473,54 +460,16 @@ struct NotesView: View {
 
     @ToolbarContentBuilder
     private func workspaceToolbar() -> some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button {
-                withAnimation(MotionStyle.animation(reduceMotion: reduceMotion)) {
-                    if workspaceMode == .vault {
-                        workspaceMode = .notes
-                        noteColumnVisibility = .all
-                    } else {
-                        noteColumnVisibility = noteColumnVisibility == .detailOnly ? .all : .detailOnly
-                    }
-                }
-            } label: {
-                Label("切换笔记侧栏", systemImage: "sidebar.left")
-            }
-            .help(workspaceMode == .vault ? "返回记事本并显示侧栏" : "显示或隐藏笔记侧栏")
-        }
-
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                NotificationCenter.default.post(name: .cipherNotesShowSecurityCenter, object: nil)
+                SettingsRoute.open(.highestProtection)
             } label: {
                 Label("安全中心", systemImage: "shield.checkered")
             }
             .help("安全中心")
 
-            Menu {
-                Button {
-                    NotificationCenter.default.post(name: .cipherNotesShowUserManagement, object: nil)
-                } label: {
-                    Label("账户与安全…", systemImage: "person.crop.circle.badge.gearshape")
-                }
-                Divider()
-                Picker("外观", selection: $appAppearanceRawValue) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.label).tag(appearance.rawValue)
-                    }
-                }
-                Toggle("减少动效", isOn: $reduceMotion)
-                Divider()
-                Button {
-                    NotificationCenter.default.post(name: .cipherNotesShowChangelog, object: nil)
-                } label: {
-                    Label("更新日志", systemImage: "sparkles")
-                }
-                Button {
-                    NotificationCenter.default.post(name: .cipherNotesShowLegalDisclosure, object: nil)
-                } label: {
-                    Label("法律与隐私声明", systemImage: "doc.text.magnifyingglass")
-                }
+            Button {
+                SettingsRoute.open(.overview)
             } label: {
                 Label("应用设置", systemImage: "gearshape")
             }
@@ -607,7 +556,7 @@ struct NotesView: View {
         let text = note.body.isEmpty ? title : "\(title)\n\n\(note.body)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        store.errorMessage = "笔记内容已复制到剪贴板"
+        store.showFeedback(.success, title: "笔记已复制")
         store.recordSecurityEvent(.noteCopied, message: "已复制 1 条笔记内容")
     }
 
@@ -637,7 +586,7 @@ struct NotesView: View {
             }
             sharePassword = ""
             showingExportShare = false
-            store.errorMessage = "共享文件已导出"
+            store.showFeedback(.success, title: "共享文件已导出")
         } catch {
             store.errorMessage = "写入共享文件失败：\(error.localizedDescription)"
         }
@@ -662,7 +611,7 @@ struct NotesView: View {
             try withSecurityScopedAccess(url) {
                 try content.write(to: url, atomically: true, encoding: .utf8)
             }
-            store.errorMessage = fileExtension == "md" ? "Markdown 已导出" : "TXT 已导出"
+            store.showFeedback(.success, title: fileExtension == "md" ? "Markdown 已导出" : "TXT 已导出")
             store.recordSecurityEvent(.noteExported, message: "已导出 1 条普通笔记")
         } catch {
             store.errorMessage = "导出失败：\(error.localizedDescription)"
@@ -1393,6 +1342,7 @@ struct VaultItemCard: View {
     let item: VaultAttachment
     let onPreview: (UUID) -> Void
     @State private var preview: NSImage?
+    @State private var confirmingDeletion = false
 
     var body: some View {
         let protected = store.currentAccountAdvancedDataProtectionEnabled
@@ -1469,7 +1419,7 @@ struct VaultItemCard: View {
                     .disabled(protected)
                     Divider()
                     Button(role: .destructive) {
-                        store.deleteVaultItem(itemID: item.id)
+                        confirmingDeletion = true
                     } label: {
                         Label("删除文件", systemImage: "trash")
                     }
@@ -1478,6 +1428,7 @@ struct VaultItemCard: View {
                         .frame(width: 32, height: 26)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .help("更多文件操作")
             }
         }
@@ -1491,6 +1442,12 @@ struct VaultItemCard: View {
                 preview = nil
             }
         }
+        .confirmationDialog("永久删除这个保险柜文件？", isPresented: $confirmingDeletion) {
+            Button("删除文件", role: .destructive) { store.deleteVaultItem(itemID: item.id) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("加密文件会立即删除，无法撤销。")
+        }
     }
 
     private var fileKind: VaultFileKind { VaultFileKind(item) }
@@ -1502,11 +1459,11 @@ struct VaultItemCard: View {
 
     private func openInternalPreview() {
         guard canPreviewInternally else {
-            store.errorMessage = "这个文件类型暂不支持无落盘内置查看"
+            store.showFeedback(.warning, title: "暂不支持内置查看", detail: "该文件类型不会在外部应用中打开")
             return
         }
         if fileKind == .text && item.byteCount > 5 * 1024 * 1024 {
-            store.errorMessage = "文本文件超过 5MB，暂不在内置查看器中打开"
+            store.showFeedback(.warning, title: "文本文件过大", detail: "内置查看上限为 5 MB")
             return
         }
         onPreview(item.id)
@@ -1525,7 +1482,7 @@ struct VaultItemCard: View {
         if store.blockAdvancedProtectionAction("高级数据保护已开启，复制保险柜文件名已阻止") { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(item.fileName, forType: .string)
-        store.errorMessage = "文件名已复制"
+        store.showFeedback(.success, title: "文件名已复制")
         store.recordSecurityEvent(.vaultFileNameCopied, message: "已复制 1 个保险柜文件名")
     }
 }

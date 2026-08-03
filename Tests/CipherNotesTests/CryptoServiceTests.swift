@@ -899,7 +899,9 @@ final class CryptoServiceTests: XCTestCase {
             store.unlock(username: "owner", password: "old-pass")
             XCTAssertEqual(store.state, .unlocked)
             store.changeCurrentUserPassword(currentPassword: "old-pass", newPassword: "new-pass", confirmation: "new-pass")
-            XCTAssertEqual(store.errorMessage, "当前账户密码已更新")
+            XCTAssertNil(store.errorMessage)
+            XCTAssertEqual(store.feedback?.kind, .success)
+            XCTAssertEqual(store.feedback?.title, "账户密码已更新")
             guard let newRecoveryCode = store.recoveryCodeToShow else {
                 return XCTFail("修改密码后应该生成新的恢复码")
             }
@@ -927,6 +929,75 @@ final class CryptoServiceTests: XCTestCase {
             )
             XCTAssertEqual(store.state, .unlocked)
         }
+    }
+
+    @MainActor
+    func testNoteDeletionCanBeUndoneBeforeCommit() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "undo", password: "pass", confirmation: "pass")
+        let noteID = store.addNote()
+        store.updateNote(id: noteID, title: "可恢复笔记", body: "仍应存在")
+
+        store.deleteNote(id: noteID)
+        XCTAssertTrue(store.notes.isEmpty)
+        XCTAssertEqual(store.pendingNoteDeletion?.noteID, noteID)
+
+        store.undoPendingNoteDeletion()
+        XCTAssertEqual(store.notes.first?.id, noteID)
+        XCTAssertEqual(store.notes.first?.body, "仍应存在")
+        XCTAssertNil(store.pendingNoteDeletion)
+    }
+
+    @MainActor
+    func testLockCommitsPendingNoteDeletion() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "commit", password: "pass", confirmation: "pass")
+        let noteID = store.addNote()
+        store.deleteNote(id: noteID)
+        store.lock()
+        XCTAssertNil(store.pendingNoteDeletion)
+        XCTAssertTrue(store.unlock(username: "commit", password: "pass"))
+        XCTAssertFalse(store.notes.contains { $0.id == noteID })
+    }
+
+    @MainActor
+    func testHighestProtectionRestoresStandardAutoLockTime() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "timer", password: "pass", confirmation: "pass")
+        store.setStandardAutoLockMinutes(15)
+        store.setAdvancedDataProtectionForCurrentAccount(true)
+        XCTAssertEqual(store.autoLockMinutes, 1)
+        store.setAdvancedDataProtectionForCurrentAccount(false)
+        XCTAssertEqual(store.autoLockMinutes, 15)
+    }
+
+    @MainActor
+    func testUnifiedSettingsRendersAtMinimumSize() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = VaultStore(vaultURL: directory.appendingPathComponent("vault.json"))
+        store.registerUser(username: "settings", password: "pass", confirmation: "pass")
+        let root = AppSettingsView(selection: .constant(.overview))
+            .environmentObject(store)
+            .frame(width: 860, height: 620)
+            .background(Color(nsColor: .windowBackgroundColor))
+        let view = NSHostingView(rootView: root)
+        view.frame = NSRect(x: 0, y: 0, width: 860, height: 620)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let snapshotPath = ProcessInfo.processInfo.environment["CIPHERNOTES_SETTINGS_SNAPSHOT"],
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: snapshotPath), options: .atomic)
+        }
+        XCTAssertNotNil(bitmap.representation(using: .png, properties: [:]))
+        XCTAssertEqual(view.bounds.size, NSSize(width: 860, height: 620))
     }
 
     func testEraseAllDataRequiresCurrentUserPasswordAndConfirmation() async throws {
